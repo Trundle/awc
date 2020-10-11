@@ -1,0 +1,4 @@
+module Wlroots [system] {
+  header "wlroots.h"
+  export *
+}

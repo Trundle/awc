@@ -1,0 +1,5 @@
+*-protocol.c
+*-protocol.h
+
+/.build/
+/.idea/
