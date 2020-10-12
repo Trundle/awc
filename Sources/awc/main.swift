@@ -279,9 +279,12 @@ extension Awc {
 
     private func handleNewInput(_ device: UnsafeMutablePointer<wlr_input_device>) {
         if device.pointee.type == WLR_INPUT_DEVICE_KEYBOARD {
-            var rules = xkb_rule_names()
             let context = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
-            let keymap = xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS)
+            let keymap: OpaquePointer = "de(neo)".withCString {
+                var rules = xkb_rule_names()
+                rules.layout = $0
+                return xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS)
+            }
             wlr_keyboard_set_keymap(device.pointee.keyboard, keymap)
 
             wlr_keyboard_set_repeat_info(device.pointee.keyboard, 25, 600)
