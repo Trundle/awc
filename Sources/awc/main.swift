@@ -7,6 +7,8 @@ import Glibc
 import Wlroots
 
 
+// MARK: Wlroots compatibility structures
+
 private struct float_rgba {
     public var r: Float
     public var g: Float
@@ -20,44 +22,18 @@ private struct float_rgba {
 
 private typealias matrix9 = (Float, Float, Float, Float, Float, Float, Float, Float, Float)
 
+// MARK: Wlroots convenience extensions
+
 extension wlr_box {
     func contains(x: Int, y: Int) -> Bool {
         self.x <= x && x < self.x + self.width && self.y <= y && y < self.y + self.height
     }
 }
 
-
-private class RenderData {
-    public var awc: Awc
-    public var output: UnsafeMutablePointer<wlr_output>
-    public var surface: UnsafeMutablePointer<wlr_xdg_surface>
-    public var sx: Int32
-    public var sy: Int32
-    public var renderer: UnsafeMutablePointer<wlr_renderer>
-    public var when: UnsafePointer<timespec>
-
-    init(
-            awc: Awc,
-            output: UnsafeMutablePointer<wlr_output>,
-            surface: UnsafeMutablePointer<wlr_xdg_surface>,
-            sx: Int32,
-            sy: Int32,
-            renderer: UnsafeMutablePointer<wlr_renderer>,
-            when: UnsafePointer<timespec>
-    ) {
-        self.awc = awc
-        self.output = output
-        self.surface = surface
-        self.sx = sx
-        self.sy = sy
-        self.renderer = renderer
-        self.when = when
-    }
-}
-
+// MARK: Awc
 
 class Awc {
-    var viewSet: ViewSet<UnsafeMutablePointer<wlr_xdg_surface>>
+    var viewSet: ViewSet<Surface>
     private let wlEventHandler: WlEventHandler
     private let outputLayout: UnsafeMutablePointer<wlr_output_layout>
     private let renderer: UnsafeMutablePointer<wlr_renderer>
@@ -65,6 +41,7 @@ class Awc {
     let cursor: UnsafeMutablePointer<wlr_cursor>
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
+    let xwayland: UnsafeMutablePointer<wlr_xwayland>
     private var hasKeyboard: Bool = false
 
     init(
@@ -74,11 +51,12 @@ class Awc {
         renderer: UnsafeMutablePointer<wlr_renderer>,
         cursor: UnsafeMutablePointer<wlr_cursor>,
         cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>,
-        seat: UnsafeMutablePointer<wlr_seat>
+        seat: UnsafeMutablePointer<wlr_seat>,
+        xwayland: UnsafeMutablePointer<wlr_xwayland>
     ) {
-        let workspace: Workspace<UnsafeMutablePointer<wlr_xdg_surface>> = Workspace(
+        let workspace: Workspace<Surface> = Workspace(
             tag: "1",
-            layout: Full<UnsafeMutablePointer<wlr_xdg_surface>>()
+            layout: Full<Surface>()
         )
         let output = Output(wlrOutput: noOpOutput, workspace: workspace)
         self.viewSet = ViewSet(current: output)
@@ -88,19 +66,18 @@ class Awc {
         self.cursor = cursor
         self.cursorManager = cursorManager
         self.seat = seat
+        self.xwayland = xwayland
         self.wlEventHandler = wlEventHandler
         self.wlEventHandler.onEvent = self.onEvent
     }
 
     private func renderSurface(
         output: UnsafeMutablePointer<wlr_output>,
-        parent: UnsafeMutablePointer<wlr_xdg_surface>,
         px: Int32,
         py: Int32,
         surface: UnsafeMutablePointer<wlr_surface>,
         sx: Int32,
         sy: Int32,
-        renderer: UnsafeMutablePointer<wlr_renderer>,
         when: UnsafePointer<timespec>
     ) {
         // We first obtain a wlr_texture, which is a GPU resource. wlroots
@@ -149,7 +126,7 @@ class Awc {
             }
 
             // This takes our matrix, the texture, and an alpha, and performs the actual rendering on the GPU.
-            wlr_render_texture_with_matrix(renderer, texture, matrixPtr, 1)
+            wlr_render_texture_with_matrix(self.renderer, texture, matrixPtr, 1)
         }
 
         // This lets the client know that we've displayed that frame and it can prepare another one now if it likes.
@@ -157,7 +134,7 @@ class Awc {
     }
 
     private func viewAt(x: Double, y: Double)
-                    -> (UnsafeMutablePointer<wlr_xdg_surface>, UnsafeMutablePointer<wlr_surface>, Double, Double)?
+                    -> (UnsafeMutablePointer<wlr_surface>, UnsafeMutablePointer<wlr_surface>, Double, Double)?
     {
         for output in self.viewSet.outputs() {
             for (view, box) in output.arrangement {
@@ -166,11 +143,18 @@ class Awc {
                     let surfaceY = y - Double(box.y)
                     var sx: Double = 0
                     var sy: Double = 0
-                    if let surface = wlr_xdg_surface_surface_at(view, surfaceX, surfaceY, &sx, &sy) {
-                        return (view, surface, sx, sy)
-                    } else {
-                        return nil
+                    switch view {
+                    case .xdg(let viewSurface):
+                        if let surface = wlr_xdg_surface_surface_at(viewSurface, surfaceX, surfaceY, &sx, &sy) {
+                            return (view.wlrSurface, surface, sx, sy)
+                        }
+                    case .xwayland:
+                        if let surface = wlr_surface_surface_at(view.wlrSurface, surfaceX, surfaceY, &sx, &sy) {
+                            return (view.wlrSurface, surface, sx, sy)
+                        }
                     }
+                    // XXX can views overlap (e.g. floating and unmanaged windows)?
+                    return nil
                 }
             }
         }
@@ -210,6 +194,10 @@ extension Awc {
         case .surfaceDestroyed(let surface): handleSurfaceDestroyed(surface)
         case .map(let surface): handleMap(surface)
         case .unmap(let surface): handleUnmap(surface)
+        case .newXWaylandSurface(let surface): handleNewXWaylandSurface(surface)
+        case .xwaylandSurfaceDestroyed(let surface): handleXWaylandSurfaceDestroyed(surface)
+        case .mapX(let surface): handleMapX(surface)
+        case .unmapX(let surface): handleUnmapX(surface)
         }
     }
 
@@ -359,13 +347,18 @@ extension Awc {
         wlr_output_layout_add_auto(self.outputLayout, wlrOutput)
     }
 
-    private func handleMap(_ surface: UnsafeMutablePointer<wlr_xdg_surface>) {
+    private func handleMap(_ xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        let surface = Surface.xdg(surface: xdgSurface)
         if self.viewSet.unmapped.remove(surface) != nil {
             self.manage(surface: surface)
         }
     }
 
-    private func handleUnmap(_ surface: UnsafeMutablePointer<wlr_xdg_surface>) {
+    private func handleUnmap(_ xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        handleUnmap(surface: Surface.xdg(surface: xdgSurface))
+    }
+
+    private func handleUnmap(surface: Surface) {
         self.viewSet.remove(view: surface)
         self.viewSet.unmapped.insert(surface)
         self.updateLayout()
@@ -377,12 +370,33 @@ extension Awc {
         guard surface.pointee.role == WLR_XDG_SURFACE_ROLE_TOPLEVEL else {
             return
         }
-        self.viewSet.unmapped.insert(surface)
+        self.viewSet.unmapped.insert(Surface.xdg(surface: surface))
         self.wlEventHandler.addXdgSurfaceListeners(surface: surface)
     }
 
     private func handleSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        self.viewSet.unmapped.remove(surface)
+        self.viewSet.unmapped.remove(Surface.xdg(surface: surface))
+    }
+
+    private func handleNewXWaylandSurface(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        wlr_xwayland_surface_ping(surface)
+        self.viewSet.unmapped.insert(Surface.xwayland(surface: surface))
+        self.wlEventHandler.addXWaylandSurfaceListeners(surface: surface)
+    }
+
+    private func handleXWaylandSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        self.viewSet.unmapped.remove(Surface.xwayland(surface: surface))
+    }
+
+    private func handleMapX(_ xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        let surface = Surface.xwayland(surface: xwaylandSurface)
+        if self.viewSet.unmapped.remove(surface) != nil {
+            self.manage(surface: surface)
+        }
+    }
+
+    private func handleUnmapX(_ xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        handleUnmap(surface: Surface.xwayland(surface: xwaylandSurface))
     }
 
     /**
@@ -410,29 +424,19 @@ extension Awc {
 
         // Find the workspace for this output
         if let output = self.viewSet.outputs().first(where: { $0.output == wlrOutput }) {
-            for (surface, box) in output.arrangement {
+            for (parent, box) in output.arrangement {
                 withUnsafePointer(to: now) {
-                    let data = RenderData(awc: self, output: wlrOutput, surface: surface,
-                            sx: box.x,
-                            sy: box.y,
-                            renderer: self.renderer,
-                            when: $0)
-                    wlr_xdg_surface_for_each_surface(
-                            surface,
-                            {
-                                let data = Unmanaged<RenderData>.fromOpaque($3!).takeUnretainedValue()
-                                data.awc.renderSurface(
-                                        output: data.output,
-                                        parent: data.surface,
-                                        px: data.sx,
-                                        py: data.sy,
-                                        surface: $0!, sx: $1, sy: $2,
-                                        renderer: data.renderer,
-                                        when: data.when
-                                )
-                            },
-                            Unmanaged.passUnretained(data).toOpaque()
-                    )
+                    for (surface, sx, sy) in parent.surfaces() {
+                        self.renderSurface(
+                            output: wlrOutput,
+                            px: box.x,
+                            py: box.y,
+                            surface: surface,
+                            sx: sx,
+                            sy: sy,
+                            when: $0
+                        )
+                    }
                 }
             }
         }
@@ -495,6 +499,17 @@ extension Awc {
     }
 }
 
+private func setupXWayland(
+    display: OpaquePointer,
+    compositor: UnsafeMutablePointer<wlr_compositor>,
+    wlEventHandler: WlEventHandler
+) -> UnsafeMutablePointer<wlr_xwayland> {
+    let xwayland = wlr_xwayland_create(display, compositor, true)
+    wlEventHandler.addXWaylandListeners(xwayland: xwayland!)
+    setenv("DISPLAY", xwayland!.pointee.display_name, 1)
+    return xwayland!
+}
+
 func main() {
     wlr_log_init(WLR_DEBUG, nil)
     // The Wayland display is managed by libwayland. It handles accepting clients from the Unix
@@ -526,7 +541,7 @@ func main() {
     // to dig your fingers in and play with their behavior if you want. Note that
     // the clients cannot set the selection directly without compositor approval,
     // see the handling of the request_set_selection event below.
-    wlr_compositor_create(wlDisplay, renderer)
+    let compositor = wlr_compositor_create(wlDisplay, renderer)
     wlr_data_device_manager_create(wlDisplay)
 
     // Creates an output layout, which a wlroots utility for working with an arrangement
@@ -586,6 +601,8 @@ func main() {
 
     setenv("WAYLAND_DISPLAY", socket, 1)
 
+    let xwayland = setupXWayland(display: wlDisplay!, compositor: compositor!, wlEventHandler: wlEventHandler)
+
     awc_session_command()
 
     let awc = Awc(
@@ -593,7 +610,8 @@ func main() {
         renderer: renderer!,
         cursor: cursor!,
         cursorManager: cursorManager!,
-        seat: seat!
+        seat: seat!,
+        xwayland: xwayland
     )
 
     // Run the Wayland event loop. This does not return until you exit the

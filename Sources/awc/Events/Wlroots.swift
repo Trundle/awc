@@ -41,11 +41,15 @@ private struct Listeners {
 
     // XDG Shell
     var newXdgSurface: wl_listener = wl_listener()
-
-    // XDG Surfaces
     var map: wl_listener = wl_listener()
     var unmap: wl_listener = wl_listener()
     var destroy: wl_listener = wl_listener()
+
+    // XWayland
+    var newXWaylandSurface: wl_listener = wl_listener()
+    var destroyX: wl_listener = wl_listener()
+    var mapX: wl_listener = wl_listener()
+    var unmapX: wl_listener = wl_listener()
 
     init() {
         var pendingEvents: [Event] = []
@@ -210,7 +214,7 @@ class WlEventHandler {
     }
 
     func addXdgSurfaceListeners(surface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        if (self.listeners.map.notify == nil) {
+        if self.listeners.map.notify == nil {
             self.listeners.map.notify = { (listener, data) in
                 WlEventHandler.emitEvent(from: listener!, data: data!, \Listeners.map, { Event.map(xdgSurface: $0) })
             }
@@ -233,6 +237,55 @@ class WlEventHandler {
         wl_signal_add(&surface.pointee.events.destroy, &self.listeners.destroy)
 
         // XXX add toplevel listeners
+    }
+
+    func addXWaylandListeners(xwayland: UnsafeMutablePointer<wlr_xwayland>) {
+        if listeners.newXWaylandSurface.notify == nil {
+            listeners.newXWaylandSurface.notify = { (listener, data) in
+                WlEventHandler.emitEvent(
+                    from: listener!,
+                    data: data!,
+                    \Listeners.newXWaylandSurface,
+                    { Event.newXWaylandSurface(surface: $0) }
+                )
+            }
+        }
+        wl_signal_add(&xwayland.pointee.events.new_surface, &self.listeners.newXWaylandSurface)
+    }
+
+    func addXWaylandSurfaceListeners(surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        if self.listeners.mapX.notify == nil {
+            self.listeners.mapX.notify = { (listener, data) in
+                WlEventHandler.emitEvent(
+                    from: listener!,
+                    data: data!,
+                    \Listeners.mapX,
+                    { Event.mapX(xwaylandSurface: $0) }
+                )
+            }
+
+            self.listeners.unmapX.notify = { (listener, data) in
+                WlEventHandler.emitEvent(
+                    from: listener!,
+                    data: data!,
+                    \Listeners.unmapX,
+                    { Event.unmapX(xwaylandSurface: $0) }
+                )
+            }
+
+            self.listeners.destroyX.notify = { (listener, data) in
+                WlEventHandler.emitEvent(
+                    from: listener!,
+                    data: data!,
+                    \Listeners.destroyX,
+                    { Event.xwaylandSurfaceDestroyed(xwaylandSurface: $0) }
+                )
+            }
+        }
+
+        wl_signal_add(&surface.pointee.events.map, &self.listeners.mapX)
+        wl_signal_add(&surface.pointee.events.unmap, &self.listeners.unmapX)
+        wl_signal_add(&surface.pointee.events.destroy, &self.listeners.destroyX)
     }
 
     private static func emitEvent<D>(
