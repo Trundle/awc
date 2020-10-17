@@ -1,24 +1,24 @@
 // MARK: List
 
 // Immutable single-linked list
-enum List<T> {
+public enum List<T> {
     indirect case cons(head: T, tail: List<T>)
     case empty
 }
 
 
 extension List: Sequence {
-    typealias Element = T
+    public typealias Element = T
 
-    typealias Iterator = ListIterator<T>
+    public typealias Iterator = ListIterator<T>
 
     public func makeIterator() -> Iterator {
         ListIterator(self)
     }
 
-    struct ListIterator<T>: IteratorProtocol {
+    public struct ListIterator<T>: IteratorProtocol {
 
-        typealias Element = T
+        public typealias Element = T
 
         private var list: List<T>
 
@@ -26,7 +26,7 @@ extension List: Sequence {
             self.list = list
         }
 
-        mutating func next() -> Element? {
+        public mutating func next() -> Element? {
             switch list {
             case .empty:
                 return nil
@@ -40,7 +40,7 @@ extension List: Sequence {
 
 
 extension List: CustomStringConvertible {
-    var description: String {
+    public var description: String {
         switch self {
         case .empty: return "[]"
         case let .cons(x, xs): return "\(x) ++ \(xs)"
@@ -54,25 +54,25 @@ infix operator ++: AssignmentPrecedence
 infix operator +++: AssignmentPrecedence
 
 extension List {
-    static func ++(left: T, right: List<T>) -> List<T> {
-        return .cons(head: left, tail: right)
+    public static func ++(left: T, right: List<T>) -> List<T> {
+        .cons(head: left, tail: right)
     }
 
-    static func +++(left: List<T>, right: List<T>) -> List<T> {
+    public static func +++(left: List<T>, right: List<T>) -> List<T> {
         switch left {
         case .empty: return right
         case let .cons(x, xs): return x ++ xs +++ right
         }
     }
 
-    func isEmpty() -> Bool {
+    public func isEmpty() -> Bool {
         switch self {
         case .empty: return true
         default: return false
         }
     }
 
-    func reverse() -> Self {
+    public func reverse() -> Self {
         func rev(_ l: Self, _ reversed: Self) -> Self {
             switch l {
             case .empty: return reversed
@@ -81,28 +81,29 @@ extension List {
         }
         return rev(self, .empty)
     }
+
+    public func filter(_ pred: (T) -> Bool) -> Self {
+        switch self {
+        case .empty: return self
+        case let .cons(x, xs) where pred(x): return .cons(head: x, tail: xs.filter(pred))
+        case .cons(_, let xs): return xs.filter(pred)
+        }
+    }
 }
 
 extension List {
-    init<C: Collection>(collection: C) where C.Element == T {
+    public init<C: Collection>(collection: C) where C.Element == T {
         self = collection.reversed().reduce(List.empty, { result, next in
             next ++ result
         })
     }
 }
 
+extension List: Equatable where T: Equatable {
+}
 
 extension List where T: Equatable {
     func remove(_ element: T) -> Self {
-        switch self {
-        case .empty:
-            return self
-        case .cons(let head, let tail):
-            if head == element {
-                return tail
-            } else {
-                return List.cons(head: head, tail: tail.remove(element))
-            }
-        }
+        self.filter { $0 != element }
     }
 }

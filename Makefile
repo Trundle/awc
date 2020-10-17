@@ -28,8 +28,15 @@ Sources/Wlroots/xdg-shell-protocol.c: Sources/Wlroots/xdg-shell-protocol.h
 	$(WAYLAND_SCANNER) private-code \
 		$(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $@
 
-awc: Sources/Wlroots/wlroots.c Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c
+awc: Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c
 	swift build \
+	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
+		-Xcc -DWLR_USE_UNSTABLE \
+		-Xcc -ISources/Wlroots \
+		$(shell echo "$(LIBS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xlinker {} ")
+
+test: awc
+	swift test \
 	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
 		-Xcc -DWLR_USE_UNSTABLE \
 		-Xcc -ISources/Wlroots \
@@ -40,4 +47,4 @@ clean:
 	rm -Rf .build
 
 .DEFAULT_GOAL=awc
-.PHONY: clean
+.PHONY: clean test

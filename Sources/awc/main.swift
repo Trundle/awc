@@ -32,10 +32,23 @@ extension wlr_box {
 
 // MARK: Awc
 
+struct KeyModifiers: OptionSet {
+    let rawValue: UInt32
+
+    static let shift = KeyModifiers(rawValue: WLR_MODIFIER_SHIFT.rawValue)
+    static let caps = KeyModifiers(rawValue: WLR_MODIFIER_CAPS.rawValue)
+    static let ctrl = KeyModifiers(rawValue: WLR_MODIFIER_CTRL.rawValue)
+    static let alt = KeyModifiers(rawValue: WLR_MODIFIER_ALT.rawValue)
+    static let mod2 = KeyModifiers(rawValue: WLR_MODIFIER_MOD2.rawValue)
+    static let mod3 = KeyModifiers(rawValue: WLR_MODIFIER_MOD3.rawValue)
+    static let logo = KeyModifiers(rawValue: WLR_MODIFIER_LOGO.rawValue)
+    static let mod5 = KeyModifiers(rawValue: WLR_MODIFIER_MOD5.rawValue)
+}
+
 class Awc {
     var viewSet: ViewSet<Surface>
     private let wlEventHandler: WlEventHandler
-    private let outputLayout: UnsafeMutablePointer<wlr_output_layout>
+    let outputLayout: UnsafeMutablePointer<wlr_output_layout>
     private let renderer: UnsafeMutablePointer<wlr_renderer>
     private let noOpOutput: UnsafeMutablePointer<wlr_output>
     let cursor: UnsafeMutablePointer<wlr_cursor>
@@ -43,6 +56,10 @@ class Awc {
     let seat: UnsafeMutablePointer<wlr_seat>
     let xwayland: UnsafeMutablePointer<wlr_xwayland>
     private var hasKeyboard: Bool = false
+    // The views that exist, should be managed, but are not mapped yet
+    var unmapped: Set<Surface> = []
+    // The "mod" key to be used for ked bindings, typically logo
+    let mod: KeyModifiers = .alt
 
     init(
         wlEventHandler: WlEventHandler,
@@ -54,12 +71,17 @@ class Awc {
         seat: UnsafeMutablePointer<wlr_seat>,
         xwayland: UnsafeMutablePointer<wlr_xwayland>
     ) {
+        let layout = Choose(Full(), TwoPane())
         let workspace: Workspace<Surface> = Workspace(
             tag: "1",
-            layout: Full<Surface>()
+            layout: layout
         )
         let output = Output(wlrOutput: noOpOutput, workspace: workspace)
-        self.viewSet = ViewSet(current: output)
+        var otherWorkspaces: [Workspace<Surface>] = []
+        for i in 2...9 {
+            otherWorkspaces.append(Workspace(tag: "\(i)", layout: layout))
+        }
+        self.viewSet = ViewSet(current: output, hidden: otherWorkspaces)
         self.outputLayout = outputLayout
         self.renderer = renderer
         self.noOpOutput = noOpOutput
@@ -89,22 +111,12 @@ class Awc {
             return
         }
 
-        // The view has a position in layout coordinates. If you have two displays,
-        // one next to the other, both 1080p, a view on the rightmost display might
-        // have layout coordinates of 2000,100. We need to translate that to
-        // output-local coordinates, or (2000 - 1920).
-        var ox: Double = 0
-        var oy: Double = 0
-        wlr_output_layout_output_coords(self.outputLayout, output, &ox, &oy)
-        ox += Double(px + sx)
-        oy += Double(py + sy)
-
         // We also have to apply the scale factor for HiDPI outputs. This is only
         // part of the puzzle, AWC does not fully support HiDPI.
         let scale = Double(output.pointee.scale)
         var box = wlr_box(
-            x: Int32(ox * scale),
-            y: Int32(oy * scale),
+            x: Int32(Double(px + sx) * scale),
+            y: Int32(Double(py + sy) * scale),
             width: Int32(Double(surface.pointee.current.width) * scale),
             height: Int32(Double(surface.pointee.current.height) * scale)
         )
@@ -153,20 +165,85 @@ class Awc {
                             return (view.wlrSurface, surface, sx, sy)
                         }
                     }
-                    // XXX can views overlap (e.g. floating and unmanaged windows)?
-                    return nil
                 }
             }
         }
         return nil
     }
 
-    private func handleKeyPress(modifiers: UInt32, sym: xkb_keysym_t) -> Bool {
-        if sym == XKB_KEY_F1 {
-            if let stack = self.viewSet.current.workspace.stack {
-                self.viewSet.current.workspace.stack = stack.focusDown()
-                self.updateLayout()
-                self.focusTop()
+    private func handleKeyPress(modifiers: KeyModifiers, sym: xkb_keysym_t) -> Bool {
+        if sym == XKB_KEY_n && modifiers == [self.mod] {
+            self.modifyAndUpdate {
+                $0.modify {
+                    $0.focusUp()
+                }
+            }
+            return true
+        } else if sym == XKB_KEY_N && modifiers == [.shift, self.mod] {
+            self.modifyAndUpdate {
+                $0.modify { $0.swapUp() }
+            }
+            return true
+        } else if sym == XKB_KEY_r && modifiers == [self.mod] {
+            self.modifyAndUpdate {
+                $0.modify {
+                    $0.focusDown()
+                }
+            }
+            return true
+        } else if sym == XKB_KEY_R && modifiers == [.shift, self.mod] {
+            self.modifyAndUpdate {
+                $0.modify { $0.swapDown() }
+            }
+            return true
+        } else if sym == XKB_KEY_Return && modifiers == [self.mod] {
+            self.modifyAndUpdate {
+                $0.modify { $0.swapPrimary() }
+            }
+            return true
+        } else if sym == XKB_KEY_C && modifiers == [.shift, self.mod] {
+            self.kill()
+            return true
+        } else if sym == XKB_KEY_Return && modifiers == [.shift, self.mod] {
+            executeCommand("kitty -o linux_display_server=wayland")
+            return true
+        } else if sym >= XKB_KEY_1 && sym <= XKB_KEY_9 && modifiers == [self.mod] {
+            let n = sym - UInt32(XKB_KEY_0)
+            self.modifyAndUpdate {
+                $0.view(tag: "\(n)")
+            }
+            return true
+        } else if [XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright,
+                   XKB_KEY_guillemotleft, XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark,
+                   XKB_KEY_leftdoublequotemark].contains(Int32(sym)) && modifiers == [.shift, self.mod] {
+            let n = 1 + [XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright,
+                         XKB_KEY_guillemotleft, XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark,
+                         XKB_KEY_leftdoublequotemark].firstIndex(of: Int32(sym))!
+            self.modifyAndUpdate {
+                $0.shift(tag: "\(n)")
+            }
+            return true
+        } else if (([XKB_KEY_x, XKB_KEY_v, XKB_KEY_l].contains(Int32(sym)) && modifiers == [.alt])
+                || ([XKB_KEY_X, XKB_KEY_V, XKB_KEY_L].contains(Int32(sym)) && modifiers == [.shift, self.mod]))
+        {
+            let outputs = self.orderedOutputs()
+            let n = [XKB_KEY_x, XKB_KEY_v, XKB_KEY_l, XKB_KEY_X, XKB_KEY_V, XKB_KEY_L].firstIndex(of: Int32(sym))! % 3
+            if n < outputs.count {
+                let targetTag = outputs[n].workspace.tag
+                self.modifyAndUpdate {
+                    if modifiers.contains(.shift) {
+                        return $0.shift(tag: targetTag)
+                    } else {
+                        return $0.view(tag: targetTag)
+                    }
+                }
+            }
+            return true
+        } else if sym == XKB_KEY_F1 {
+            if let nextLayout = self.viewSet.current.workspace.layout.nextLayout() {
+                self.modifyAndUpdate {
+                    $0.replace(current: $0.current.replace(workspace: $0.current.workspace.replace(layout: nextLayout)))
+                }
             }
             return true
         }
@@ -213,6 +290,7 @@ extension Awc {
     }
 
     private func handleCursorButton(_ event: UnsafeMutablePointer<wlr_event_pointer_button>) {
+        // XXX change focus here
         // Notify the client with pointer focus that a button press has occurred
         wlr_seat_pointer_notify_button(self.seat, event.pointee.time_msec, event.pointee.button, event.pointee.state)
     }
@@ -253,7 +331,9 @@ extension Awc {
 
     /// Handles the common path for a relative and absolute cursor motion
     private func handleCursorMotion(time: UInt32) {
-        if let (_, surface, sx, sy) = self.viewAt(x: self.cursor.pointee.x, y: self.cursor.pointee.y) {
+        let cx = self.cursor.pointee.x
+        let cy = self.cursor.pointee.y
+        if let (_, surface, sx, sy) = self.viewAt(x: cx, y: cy) {
             let focusChanged = self.seat.pointee.pointer_state.focused_surface != surface
             wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
             if !focusChanged {
@@ -262,6 +342,9 @@ extension Awc {
                 wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
             }
         } else {
+            // If there's no surface under the cursor, set the cursor image to a
+            // default. This is what makes the cursor image appear when you move it
+            // around the screen, not over any surfaces.
             wlr_xcursor_manager_set_cursor_image(self.cursorManager, "left_ptr", self.cursor)
             wlr_seat_pointer_clear_focus(self.seat)
         }
@@ -308,7 +391,7 @@ extension Awc {
         // communicated to the client. We always have a cursor, even if
         // there are no pointer devices, so we always include that capability.
         var caps = WL_SEAT_CAPABILITY_POINTER.rawValue
-        if (hasKeyboard) {
+        if hasKeyboard {
             caps |= WL_SEAT_CAPABILITY_KEYBOARD.rawValue
         }
         wlr_seat_set_capabilities(self.seat, caps)
@@ -330,11 +413,16 @@ extension Awc {
         }
 
         if self.viewSet.current.output == self.noOpOutput {
-            self.viewSet.current = Output(wlrOutput: wlrOutput, workspace: self.viewSet.current.workspace)
+            self.viewSet = self.viewSet.replace(
+                current: Output(wlrOutput: wlrOutput, workspace: self.viewSet.current.workspace))
         } else {
-            if let workspace = self.viewSet.hidden.popLast() {
-                let output = Output(wlrOutput: wlrOutput, workspace: workspace)
-                self.viewSet.visible.append(output)
+            var hidden = Array(self.viewSet.hidden)
+            if let workspace = hidden.popLast() {
+                self.viewSet = self.viewSet.replace(
+                    current: Output(wlrOutput: wlrOutput, workspace: workspace),
+                    visible: Array(self.viewSet.visible) + [self.viewSet.current],
+                    hidden: hidden
+                )
             }
         }
 
@@ -348,11 +436,14 @@ extension Awc {
         // display, which Wayland clients can see to find out information about the
         // output (such as DPI, scale factor, manufacturer, etc).
         wlr_output_layout_add_auto(self.outputLayout, wlrOutput)
+
+        // Show a cursor
+        wlr_xcursor_manager_set_cursor_image(self.cursorManager, "left_ptr", self.cursor)
     }
 
     private func handleMap(_ xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
         let surface = Surface.xdg(surface: xdgSurface)
-        if self.viewSet.unmapped.remove(surface) != nil {
+        if self.unmapped.remove(surface) != nil {
             self.manage(surface: surface)
         }
     }
@@ -362,10 +453,10 @@ extension Awc {
     }
 
     private func handleUnmap(surface: Surface) {
-        self.viewSet.remove(view: surface)
-        self.viewSet.unmapped.insert(surface)
-        self.updateLayout()
-        self.focusTop()
+        self.modifyAndUpdate {
+            self.unmapped.insert(surface)
+            return $0.remove(view: surface)
+        }
     }
 
     private func handleNewXdgSurface(_ surface: UnsafeMutablePointer<wlr_xdg_surface>) {
@@ -373,27 +464,28 @@ extension Awc {
         guard surface.pointee.role == WLR_XDG_SURFACE_ROLE_TOPLEVEL else {
             return
         }
-        self.viewSet.unmapped.insert(Surface.xdg(surface: surface))
+        self.unmapped.insert(Surface.xdg(surface: surface))
         self.wlEventHandler.addXdgSurfaceListeners(surface: surface)
+        wlr_xdg_surface_ping(surface)
     }
 
     private func handleSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        self.viewSet.unmapped.remove(Surface.xdg(surface: surface))
+        self.unmapped.remove(Surface.xdg(surface: surface))
     }
 
     private func handleNewXWaylandSurface(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         wlr_xwayland_surface_ping(surface)
-        self.viewSet.unmapped.insert(Surface.xwayland(surface: surface))
+        self.unmapped.insert(Surface.xwayland(surface: surface))
         self.wlEventHandler.addXWaylandSurfaceListeners(surface: surface)
     }
 
     private func handleXWaylandSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
-        self.viewSet.unmapped.remove(Surface.xwayland(surface: surface))
+        self.unmapped.remove(Surface.xwayland(surface: surface))
     }
 
     private func handleMapX(_ xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         let surface = Surface.xwayland(surface: xwaylandSurface)
-        if self.viewSet.unmapped.remove(surface) != nil {
+        if self.unmapped.remove(surface) != nil {
             self.manage(surface: surface)
         }
     }
@@ -464,14 +556,14 @@ extension Awc {
         // Translate libinput keycode -> xkbcommon
         let keycode = event.pointee.keycode + 8
         // Get a list of keysyms based on the keymap for this keyboard
-        var syms = UnsafeMutablePointer<Optional<UnsafePointer<xkb_keysym_t>>>.allocate(capacity: 1)
+        let syms = UnsafeMutablePointer<Optional<UnsafePointer<xkb_keysym_t>>>.allocate(capacity: 1)
         defer {
             syms.deallocate()
         }
         let nsyms = xkb_state_key_get_syms(device.pointee.keyboard.pointee.xkb_state, keycode, syms)
 
         var handled = false
-        let modifiers = wlr_keyboard_get_modifiers(device.pointee.keyboard)
+        let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device.pointee.keyboard))
         if event.pointee.state == WLR_KEY_PRESSED {
             for i in 0..<Int(nsyms) {
                 if let symPtr = syms[i] {
@@ -605,8 +697,6 @@ func main() {
     setenv("WAYLAND_DISPLAY", socket, 1)
 
     let xwayland = setupXWayland(display: wlDisplay!, compositor: compositor!, wlEventHandler: wlEventHandler)
-
-    awc_session_command()
 
     let awc = Awc(
         wlEventHandler: wlEventHandler, noOpOutput: noopOutput!, outputLayout: outputLayout!,

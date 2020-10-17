@@ -1,3 +1,4 @@
+import Libawc
 import Wlroots
 
 extension Awc {
@@ -40,16 +41,19 @@ extension Awc {
         }
     }
 
-    /// Adds a new surface to be managed in the current workspace and brings it into focus.
-    func manage(surface: Surface) {
-        let workspace = self.viewSet.current.workspace
-        if let stack = workspace.stack {
-            workspace.stack = stack.insert(surface)
-        } else {
-            workspace.stack = Stack(up: .empty, focus: surface, down: .empty)
-        }
+    /// Modifies the view set with given function and then updates.
+    func modifyAndUpdate(_ f: (ViewSet<Surface>) -> ViewSet<Surface>) {
+        self.viewSet = f(self.viewSet)
         self.updateLayout()
         self.focusTop()
+    }
+
+    /// Adds a new surface to be managed in the current workspace and brings it into focus.
+    func manage(surface: Surface) {
+        surface.setTiled()
+        self.modifyAndUpdate {
+            $0.modifyOr(default: Stack.singleton(surface), { $0.insert(surface) })
+        }
     }
 
     func updateLayout() {
@@ -80,6 +84,31 @@ extension Awc {
                 output.arrangement = []
             }
         }
+    }
+
+    /// Kills the currently focused surface.
+    func kill() {
+        self.withFocused {
+            switch $0 {
+            case .xdg(let surface): wlr_xdg_toplevel_send_close(surface)
+            case .xwayland(let surface): wlr_xwayland_surface_close(surface)
+            }
+        }
+    }
+
+    /// Applies operation `f` to the currently focused surface, if there is one.
+    func withFocused(_ f: (Surface) -> ()) {
+        if let stack = self.viewSet.current.workspace.stack {
+            f(stack.focus)
+        }
+    }
+
+    /// Returns an array of all outputs, where the first element is the left-most output.
+    func orderedOutputs() -> [Output<Surface>] {
+        self.viewSet.outputs()
+            .map { ($0, wlr_output_layout_get_box(self.outputLayout, $0.output)!) }
+            .sorted(by: { $0.1.pointee.x <= $1.1.pointee.x })
+            .map { $0.0 }
     }
 
     /// Returns the current workspace's focused surface's wlr_surface.

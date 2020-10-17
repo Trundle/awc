@@ -6,6 +6,19 @@ enum Surface: Hashable {
 }
 
 extension Surface {
+    func setTiled() {
+        switch self {
+        case .xdg(let surface):
+            let edges = WLR_EDGE_LEFT.rawValue | WLR_EDGE_RIGHT.rawValue |
+                    WLR_EDGE_TOP.rawValue | WLR_EDGE_BOTTOM.rawValue
+            wlr_xdg_toplevel_set_tiled(surface, edges)
+        case .xwayland(let surface):
+            wlr_xwayland_surface_set_maximized(surface, true)
+        }
+    }
+}
+
+extension Surface {
     var wlrSurface: UnsafeMutablePointer<wlr_surface> {
         get {
             switch self {
