@@ -60,6 +60,7 @@ class Awc {
     var unmapped: Set<Surface> = []
     // The "mod" key to be used for ked bindings, typically logo
     let mod: KeyModifiers = .alt
+    var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
 
     init(
         wlEventHandler: WlEventHandler,
@@ -149,10 +150,13 @@ class Awc {
                     -> (UnsafeMutablePointer<wlr_surface>, UnsafeMutablePointer<wlr_surface>, Double, Double)?
     {
         for output in self.viewSet.outputs() {
-            for (view, box) in output.arrangement {
-                if box.contains(x: Int(x), y: Int(y)) {
-                    let surfaceX = x - Double(box.x)
-                    let surfaceY = y - Double(box.y)
+            let outputLayoutBox = wlr_output_layout_get_box(self.outputLayout, output.output).pointee
+            let outputX = x - Double(outputLayoutBox.x)
+            let outputY = y - Double(outputLayoutBox.y)
+            for (view, box) in output.arrangement.reversed() {
+                if box.contains(x: Int(outputX), y: Int(outputY)) {
+                    let surfaceX = outputX - Double(box.x)
+                    let surfaceY = outputY - Double(box.y)
                     var sx: Double = 0
                     var sy: Double = 0
                     switch view {
@@ -173,41 +177,49 @@ class Awc {
 
     private func handleKeyPress(modifiers: KeyModifiers, sym: xkb_keysym_t) -> Bool {
         if sym == XKB_KEY_n && modifiers == [self.mod] {
-            self.modifyAndUpdate {
-                $0.modify {
-                    $0.focusUp()
-                }
-            }
-            return true
-        } else if sym == XKB_KEY_N && modifiers == [.shift, self.mod] {
-            self.modifyAndUpdate {
-                $0.modify { $0.swapUp() }
-            }
-            return true
-        } else if sym == XKB_KEY_r && modifiers == [self.mod] {
+            // Move focus to the next surface
             self.modifyAndUpdate {
                 $0.modify {
                     $0.focusDown()
                 }
             }
             return true
-        } else if sym == XKB_KEY_R && modifiers == [.shift, self.mod] {
+        } else if sym == XKB_KEY_N && modifiers == [.shift, self.mod] {
+            // Swap the focused surface with the next surface
             self.modifyAndUpdate {
                 $0.modify { $0.swapDown() }
             }
             return true
+        } else if sym == XKB_KEY_r && modifiers == [self.mod] {
+            // Move focus to the previous surface
+            self.modifyAndUpdate {
+                $0.modify {
+                    $0.focusUp()
+                }
+            }
+            return true
+        } else if sym == XKB_KEY_R && modifiers == [.shift, self.mod] {
+            // Swap the focused surface with the previous surface
+            self.modifyAndUpdate {
+                $0.modify { $0.swapUp() }
+            }
+            return true
         } else if sym == XKB_KEY_Return && modifiers == [self.mod] {
+            // Swap the focused surface and the primary surface
             self.modifyAndUpdate {
                 $0.modify { $0.swapPrimary() }
             }
             return true
         } else if sym == XKB_KEY_C && modifiers == [.shift, self.mod] {
+            // Close focused surface
             self.kill()
             return true
         } else if sym == XKB_KEY_Return && modifiers == [.shift, self.mod] {
+            // Launch terminal
             executeCommand("kitty -o linux_display_server=wayland")
             return true
         } else if sym >= XKB_KEY_1 && sym <= XKB_KEY_9 && modifiers == [self.mod] {
+            // Switch to workspace n
             let n = sym - UInt32(XKB_KEY_0)
             self.modifyAndUpdate {
                 $0.view(tag: "\(n)")
@@ -216,6 +228,7 @@ class Awc {
         } else if [XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright,
                    XKB_KEY_guillemotleft, XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark,
                    XKB_KEY_leftdoublequotemark].contains(Int32(sym)) && modifiers == [.shift, self.mod] {
+            // Move focused surface to workspace n
             let n = 1 + [XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright,
                          XKB_KEY_guillemotleft, XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark,
                          XKB_KEY_leftdoublequotemark].firstIndex(of: Int32(sym))!
@@ -226,6 +239,7 @@ class Awc {
         } else if (([XKB_KEY_x, XKB_KEY_v, XKB_KEY_l].contains(Int32(sym)) && modifiers == [.alt])
                 || ([XKB_KEY_X, XKB_KEY_V, XKB_KEY_L].contains(Int32(sym)) && modifiers == [.shift, self.mod]))
         {
+            // Focus output n, with shift pressed move focused surface to output n
             let outputs = self.orderedOutputs()
             let n = [XKB_KEY_x, XKB_KEY_v, XKB_KEY_l, XKB_KEY_X, XKB_KEY_V, XKB_KEY_L].firstIndex(of: Int32(sym))! % 3
             if n < outputs.count {
@@ -240,12 +254,20 @@ class Awc {
             }
             return true
         } else if sym == XKB_KEY_F1 {
+            // Switch to next layout
             if let nextLayout = self.viewSet.current.workspace.layout.nextLayout() {
                 self.modifyAndUpdate {
                     $0.replace(current: $0.current.replace(workspace: $0.current.workspace.replace(layout: nextLayout)))
                 }
             }
             return true
+        } else if sym == XKB_KEY_t && modifiers == [self.mod] {
+            // Push surface back into tiling
+            self.withFocused { surface in
+                self.modifyAndUpdate {
+                    $0.sink(view: surface)
+                }
+            }
         }
         return false
     }
@@ -271,8 +293,10 @@ extension Awc {
         case .surfaceDestroyed(let surface): handleSurfaceDestroyed(surface)
         case .map(let surface): handleMap(surface)
         case .unmap(let surface): handleUnmap(surface)
+        case .xwaylandReady: handleXWaylandReady()
         case .newXWaylandSurface(let surface): handleNewXWaylandSurface(surface)
         case .xwaylandSurfaceDestroyed(let surface): handleXWaylandSurfaceDestroyed(surface)
+        case .configureRequestX(let event): handleConfigureRequestX(event)
         case .mapX(let surface): handleMapX(surface)
         case .unmapX(let surface): handleUnmapX(surface)
         }
@@ -334,13 +358,8 @@ extension Awc {
         let cx = self.cursor.pointee.x
         let cy = self.cursor.pointee.y
         if let (_, surface, sx, sy) = self.viewAt(x: cx, y: cy) {
-            let focusChanged = self.seat.pointee.pointer_state.focused_surface != surface
             wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
-            if !focusChanged {
-                // The enter event contains coordinates, so we only need to notify on
-                // motion if the focus did not change
-                wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
-            }
+            wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
         } else {
             // If there's no surface under the cursor, set the cursor image to a
             // default. This is what makes the cursor image appear when you move it
@@ -473,6 +492,42 @@ extension Awc {
         self.unmapped.remove(Surface.xdg(surface: surface))
     }
 
+    // Called when XWayland is ready. Retrieves the X atoms (e.g. window types etc).
+    private func handleXWaylandReady() {
+        let xcbConn = xcb_connect(nil, nil)
+        let err = xcb_connection_has_error(xcbConn)
+        guard err == 0 else {
+            print("[ERROR] XBC connect failed: \(err)")
+            return
+        }
+
+        let cookies = UnsafeMutableBufferPointer<xcb_intern_atom_cookie_t>
+                .allocate(capacity: AtomWindowType.allCases.count)
+        for (i, type) in AtomWindowType.allCases.enumerated() {
+            type.rawValue.withCString {
+                cookies[i] = xcb_intern_atom(xcbConn, 0, UInt16(type.rawValue.count), $0)
+            }
+        }
+        for (i, type) in AtomWindowType.allCases.enumerated() {
+            let error = UnsafeMutablePointer<UnsafeMutablePointer<xcb_generic_error_t>?>.allocate(capacity: 1)
+            defer {
+                error.deallocate()
+            }
+            if let reply = xcb_intern_atom_reply(xcbConn, cookies[i], error) {
+                defer {
+                    free(reply)
+                }
+                if error.pointee == nil {
+                    self.windowTypeAtoms[reply.pointee.atom] = type
+                } else {
+                    print("[ERROR] X11 error \(String(describing: error.pointee?.pointee.error_code)) when " +
+                            "trying to resolve X11 atom \(type)")
+                    free(error)
+                }
+            }
+        }
+    }
+
     private func handleNewXWaylandSurface(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         wlr_xwayland_surface_ping(surface)
         self.unmapped.insert(Surface.xwayland(surface: surface))
@@ -481,6 +536,29 @@ extension Awc {
 
     private func handleXWaylandSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         self.unmapped.remove(Surface.xwayland(surface: surface))
+    }
+
+    private func handleConfigureRequestX(_ event: UnsafeMutablePointer<wlr_xwayland_surface_configure_event>) {
+        // Allow configure request if it's a floating surface (so likely a menu or popup) or an unmapped surface
+        let surface = Surface.xwayland(surface: event.pointee.surface)
+        let floating = self.viewSet.floating.contains(key: surface)
+        if floating || self.unmapped.contains(surface) {
+            wlr_xwayland_surface_configure(
+                event.pointee.surface, event.pointee.x, event.pointee.y, event.pointee.width, event.pointee.height
+            )
+            if floating {
+                if let output = self.viewSet.findOutput(view: surface) {
+                    let outputLayoutBox = wlr_output_layout_get_box(self.outputLayout, output.output).pointee
+                    let newBox = wlr_box(
+                            x: Int32(event.pointee.x) - outputLayoutBox.x,
+                            y: Int32(event.pointee.y) - outputLayoutBox.y,
+                            width: Int32(event.pointee.width), height: Int32(event.pointee.height))
+                    self.modifyAndUpdate {
+                        $0.replace(floating: $0.floating.updateValue(newBox, forKey: surface))
+                    }
+                }
+            }
+        }
     }
 
     private func handleMapX(_ xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
@@ -695,6 +773,10 @@ func main() {
     }
 
     setenv("WAYLAND_DISPLAY", socket, 1)
+
+    // Create an XDG output manager. Clients can use it to get a description of output regions.
+    // It's used for example by XWayland, to get notified when the output configuration changes.
+    wlr_xdg_output_manager_v1_create(wlDisplay, outputLayout)
 
     let xwayland = setupXWayland(display: wlDisplay!, compositor: compositor!, wlEventHandler: wlEventHandler)
 

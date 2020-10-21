@@ -46,7 +46,9 @@ private struct Listeners {
     var destroy: wl_listener = wl_listener()
 
     // XWayland
+    var xwaylandReady: wl_listener = wl_listener()
     var newXWaylandSurface: wl_listener = wl_listener()
+    var configureRequestX: wl_listener = wl_listener()
     var destroyX: wl_listener = wl_listener()
     var mapX: wl_listener = wl_listener()
     var unmapX: wl_listener = wl_listener()
@@ -155,8 +157,7 @@ class WlEventHandler {
 
     func addKeyboardListeners(device: UnsafeMutablePointer<wlr_input_device>) {
         let modifiers = UnsafeMutablePointer<StatefulListener>.allocate(capacity: 1)
-        modifiers.pointee.handler = self
-        modifiers.pointee.state = UnsafeMutableRawPointer(device)
+        modifiers.initialize(to: StatefulListener(handler: self, state: UnsafeMutableRawPointer(device)))
         modifiers.pointee.listener.notify = { (listener, data) in
             WlEventHandler.emitEventWithState(
                 from: listener!, data: data!, { Event.modifiers(device: $0, keyboard: $1) }
@@ -166,8 +167,7 @@ class WlEventHandler {
         self.listenersWithState.append(modifiers)
 
         let key = UnsafeMutablePointer<StatefulListener>.allocate(capacity: 1)
-        key.pointee.handler = self
-        key.pointee.state = UnsafeMutableRawPointer(device)
+        key.initialize(to: StatefulListener(handler: self, state: UnsafeMutableRawPointer(device)))
         key.pointee.listener.notify = { (listener, data) in
             WlEventHandler.emitEventWithState(from: listener!, data: data!, { Event.key(device: $0, event: $1) })
         }
@@ -249,8 +249,14 @@ class WlEventHandler {
                     { Event.newXWaylandSurface(surface: $0) }
                 )
             }
+
+            listeners.xwaylandReady.notify = { (listener, data) in
+                let listenersPtr = wlContainer(of: listener!, \Listeners.xwaylandReady)
+                listenersPtr.pointee.onEvent(.xwaylandReady)
+            }
         }
         wl_signal_add(&xwayland.pointee.events.new_surface, &self.listeners.newXWaylandSurface)
+        wl_signal_add(&xwayland.pointee.events.ready, &self.listeners.xwaylandReady)
     }
 
     func addXWaylandSurfaceListeners(surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
@@ -281,8 +287,18 @@ class WlEventHandler {
                     { Event.xwaylandSurfaceDestroyed(xwaylandSurface: $0) }
                 )
             }
+
+            self.listeners.configureRequestX.notify = { (listener, data) in
+                WlEventHandler.emitEvent(
+                        from: listener!,
+                        data: data!,
+                        \Listeners.configureRequestX,
+                        { Event.configureRequestX(event: $0) }
+                )
+            }
         }
 
+        wl_signal_add(&surface.pointee.events.request_configure, &self.listeners.configureRequestX)
         wl_signal_add(&surface.pointee.events.map, &self.listeners.mapX)
         wl_signal_add(&surface.pointee.events.unmap, &self.listeners.unmapX)
         wl_signal_add(&surface.pointee.events.destroy, &self.listeners.destroyX)

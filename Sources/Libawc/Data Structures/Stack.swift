@@ -92,6 +92,10 @@ extension Stack {
 }
 
 extension Stack where T: Equatable {
+    public func contains(_ element: T) -> Bool {
+        self.focus == element || self.up.contains(element) || self.down.contains(element)
+    }
+
     public func remove(_ element: T) -> Self? {
         self.filter { $0 != element }
     }

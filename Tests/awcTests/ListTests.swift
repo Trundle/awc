@@ -29,10 +29,22 @@ public final class ListTests: XCTestCase {
         XCTAssertEqual(list.reverse().reverse(), list)
     }
 
+    func testContainsReturnsFalseForEmptyList() {
+        XCTAssertFalse(List<Int>.empty.contains(42))
+    }
+
+    func testContainsSingleton() {
+        let list = List(collection: [42])
+
+        XCTAssertFalse(list.contains(23))
+        XCTAssertTrue(list.contains(42))
+    }
+
     public static var allTests = [
         ("testEmptyIsEmpty", testEmptyIsEmpty),
         ("testFilterAllFiltered", testFilterAllFiltered),
         ("testFilterNonFiltered", testFilterNonFiltered),
         ("testReverse", testReverse),
+        ("testContainsReturnsFalseForEmptyList", testContainsReturnsFalseForEmptyList),
     ]
 }

@@ -4,24 +4,24 @@ import Wlroots
 extension Awc {
     /// Focuses the top window (if there is one)
     func focusTop() {
-        let keyboard = wlr_seat_get_keyboard(self.seat)!
-
-        if let prevSurface = self.seat.pointee.keyboard_state.focused_surface {
-            guard prevSurface != focusedWlrSurface() else {
-                return
+        withFocused { focus in
+            if let prevSurface = self.seat.pointee.keyboard_state.focused_surface {
+                guard prevSurface != focusedWlrSurface() else {
+                    return
+                }
+                if wlr_surface_is_xdg_surface(prevSurface) {
+                    let prevXdgSurface = wlr_xdg_surface_from_wlr_surface(prevSurface)
+                    wlr_xdg_toplevel_set_activated(prevXdgSurface, false)
+                } else if wlr_surface_is_xwayland_surface(prevSurface) {
+                    let prevXWaylandSurface = wlr_xwayland_surface_from_wlr_surface(prevSurface)!
+                    if !focus.popupOf(wlrXWaylandSurface: prevXWaylandSurface) {
+                        wlr_xwayland_surface_activate(prevXWaylandSurface, false)
+                    }
+                }
             }
-            if wlr_surface_is_xdg_surface(prevSurface) {
-                let prevXdgSurface = wlr_xdg_surface_from_wlr_surface(prevSurface)
-                wlr_xdg_toplevel_set_activated(prevXdgSurface, false)
-            } else if wlr_surface_is_xwayland_surface(prevSurface) {
-                let prevXWaylandSurface = wlr_xwayland_surface_from_wlr_surface(prevSurface)
-                wlr_xwayland_surface_activate(prevXWaylandSurface, false)
-            }
-        }
 
-        if let stack = self.viewSet.current.workspace.stack {
             // Activate the new surface
-            switch stack.focus {
+            switch focus {
             case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface, true)
             case .xwayland(let surface):
                 wlr_xwayland_surface_activate(surface, true)
@@ -30,10 +30,11 @@ extension Awc {
             // Tell the seat to have the keyboard enter this surface. wlroots will keep
             // track of this and automatically send key events to the appropriate
             // clients without additional work on your part.
+            let keyboard = wlr_seat_get_keyboard(self.seat)!
             withUnsafeMutablePointer(to: &keyboard.pointee.keycodes.0) { keycodesPtr in
                 wlr_seat_keyboard_notify_enter(
                         self.seat,
-                        stack.focus.wlrSurface,
+                        focus.wlrSurface,
                         keycodesPtr,
                         keyboard.pointee.num_keycodes,
                         &keyboard.pointee.modifiers)
@@ -50,38 +51,42 @@ extension Awc {
 
     /// Adds a new surface to be managed in the current workspace and brings it into focus.
     func manage(surface: Surface) {
-        surface.setTiled()
+        let floatingBox = surface.preferredFloatingBox(awc: self, output: self.viewSet.current)
+        if floatingBox == nil {
+            surface.setTiled()
+        }
         self.modifyAndUpdate {
-            $0.modifyOr(default: Stack.singleton(surface), { $0.insert(surface) })
+            var viewSet = $0.modifyOr(default: Stack.singleton(surface), { $0.insert(surface) })
+            if floatingBox != nil {
+                viewSet = viewSet.float(view: surface, box: floatingBox!)
+            }
+            return viewSet
         }
     }
 
     func updateLayout() {
         for output in self.viewSet.outputs() {
-            if let stack = output.workspace.stack {
-                var width: Int32 = 0
-                var height: Int32 = 0
-                wlr_output_effective_resolution(output.output, &width, &height)
-                let outputBox = wlr_box(x: 0, y: 0, width: width, height: height)
+            let outputLayoutBox = wlr_output_layout_get_box(self.outputLayout, output.output).pointee
+            let outputBox = wlr_box(x: 0, y: 0, width: outputLayoutBox.width, height: outputLayoutBox.height)
 
+            if let stack = output.workspace.stack?.filter({ !self.viewSet.floating.contains(key: $0) }) {
                 let arrangement = output.workspace.layout.doLayout(stack: stack, box: outputBox)
                 for (surface, box) in arrangement {
-                    switch surface {
-                    case .xdg(let xdgSurface):
-                        wlr_xdg_toplevel_set_size(xdgSurface, UInt32(box.width), UInt32(box.height))
-                    case .xwayland(let xwaylandSurface):
-                        wlr_xwayland_surface_configure(
-                            xwaylandSurface,
-                            Int16(outputBox.x + box.x),
-                            Int16(outputBox.y + box.y),
-                            UInt16(box.width),
-                            UInt16(box.height)
-                        )
-                    }
+                    surface.configure(output: outputLayoutBox, box: box)
                 }
                 output.arrangement = arrangement
             } else {
                 output.arrangement = []
+            }
+
+            // Add floating windows
+            if let stack = output.workspace.stack {
+                for surface in stack.toList() {
+                    if let box = self.viewSet.floating[surface] {
+                        surface.configure(output: outputLayoutBox, box: box)
+                        output.arrangement.append((surface, box))
+                    }
+                }
             }
         }
     }

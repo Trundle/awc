@@ -6,6 +6,21 @@ enum Surface: Hashable {
 }
 
 extension Surface {
+    func configure(output: wlr_box, box: wlr_box) {
+        switch self {
+        case .xdg(let xdgSurface):
+            wlr_xdg_toplevel_set_size(xdgSurface, UInt32(box.width), UInt32(box.height))
+        case .xwayland(let xwaylandSurface):
+            wlr_xwayland_surface_configure(
+                    xwaylandSurface,
+                    Int16(output.x + box.x),
+                    Int16(output.y + box.y),
+                    UInt16(box.width),
+                    UInt16(box.height)
+            )
+        }
+    }
+
     func setTiled() {
         switch self {
         case .xdg(let surface):
@@ -14,6 +29,57 @@ extension Surface {
             wlr_xdg_toplevel_set_tiled(surface, edges)
         case .xwayland(let surface):
             wlr_xwayland_surface_set_maximized(surface, true)
+        }
+    }
+
+    func preferredFloatingBox(awc: Awc, output: Output<Surface>) -> wlr_box? {
+        switch self {
+        case .xdg(let surface):
+            if surface.pointee.toplevel.pointee.parent != nil {
+                let box = UnsafeMutableBufferPointer<wlr_box>.allocate(capacity: 1)
+                wlr_xdg_surface_get_geometry(surface, box.baseAddress!)
+                return box[0]
+            } else {
+                return nil
+            }
+        case .xwayland(let surface):
+            let constructBox: () -> wlr_box = {
+                let outputBox = wlr_output_layout_get_box(awc.outputLayout, output.output).pointee
+                return wlr_box(x: Int32(surface.pointee.x) - outputBox.x,
+                        y: Int32(surface.pointee.y) - outputBox.y,
+                        width: Int32(surface.pointee.width), height: Int32(surface.pointee.height))
+            }
+
+            if surface.pointee.override_redirect || surface.pointee.modal {
+                return constructBox()
+            } else {
+                for i in 0..<surface.pointee.window_type_len {
+                    if let type = awc.windowTypeAtoms[surface.pointee.window_type[i]] {
+                        if [.dialog, .dropdownMenu, .menu, .notification, .popupMenu, .splash,
+                            .toolbar, .tooltip, .utility
+                           ].contains(type)
+                        {
+                            return constructBox()
+                        }
+                    }
+                }
+            }
+            return nil
+        }
+    }
+
+    func popupOf(wlrXWaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) -> Bool {
+        switch self {
+        case .xdg: return false
+        case .xwayland(let surface):
+            var current = surface
+            while current.pointee.parent != nil {
+                current = current.pointee.parent
+                if current == wlrXWaylandSurface {
+                    return true
+                }
+            }
+            return false
         }
     }
 }
