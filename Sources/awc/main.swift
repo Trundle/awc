@@ -778,6 +778,8 @@ func main() {
     // It's used for example by XWayland, to get notified when the output configuration changes.
     wlr_xdg_output_manager_v1_create(wlDisplay, outputLayout)
 
+    wlr_gamma_control_manager_v1_create(wlDisplay)
+
     let xwayland = setupXWayland(display: wlDisplay!, compositor: compositor!, wlEventHandler: wlEventHandler)
 
     let awc = Awc(
