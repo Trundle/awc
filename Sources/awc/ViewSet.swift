@@ -3,17 +3,32 @@ import Wlroots
 
 public class Output<View> {
     public let output: UnsafeMutablePointer<wlr_output>
+    public let outputLayout: UnsafeMutablePointer<wlr_output_layout>?
     public let workspace: Workspace<View>
     // The current surface arrangement
     public var arrangement: [(View, wlr_box)] = []
 
-    init(wlrOutput: UnsafeMutablePointer<wlr_output>, workspace: Workspace<View>) {
+    init(wlrOutput: UnsafeMutablePointer<wlr_output>,
+         outputLayout: UnsafeMutablePointer<wlr_output_layout>?,
+         workspace: Workspace<View>
+    ) {
         self.output = wlrOutput
+        self.outputLayout = outputLayout
         self.workspace = workspace
     }
 
     public func replace(workspace: Workspace<View>) -> Output<View> {
-        Output(wlrOutput: self.output, workspace: workspace)
+        Output(wlrOutput: self.output, outputLayout: self.outputLayout, workspace: workspace)
+    }
+
+    var box: wlr_box {
+        get {
+            if let outputLayout = self.outputLayout {
+                return wlr_output_layout_get_box(outputLayout, self.output).pointee
+            } else {
+                return wlr_box(x: 0, y: 0, width: 1280, height: 1024)
+            }
+        }
     }
 }
 
@@ -124,6 +139,11 @@ public class ViewSet<View: Hashable> {
         return nil
     }
 
+    /// Finds the workspace that displays the given view.
+    func findWorkspace(view: View) -> Workspace<View>? {
+        self.workspaces().first(where: { $0.stack?.contains(view) == true })
+    }
+
     /// Removes the given view, if it exists.
     func remove(view: View) -> ViewSet<View> {
         let removeFromWorkspace: (Workspace<View>) -> Workspace<View> = {
@@ -156,6 +176,18 @@ public class ViewSet<View: Hashable> {
     /// Performs the given action on the workspace with the given tag.
     func onWorkspace(tag: String, _ f: (ViewSet<View>) -> ViewSet<View>) -> ViewSet<View> {
         f(self.view(tag: tag)).view(tag: self.current.workspace.tag)
+    }
+
+    func focus(view: View) -> ViewSet<View> {
+        guard self.peek() != view else {
+            return self
+        }
+
+        if let workspace = self.findWorkspace(view: view) {
+            return self.view(tag: workspace.tag).modify { until({ $0.focus == view }, { $0.focusUp() }, $0) }
+        } else {
+            return self
+        }
     }
 
     /// Returns the focused element of the current stack (if there is one).
@@ -273,4 +305,13 @@ public class Map<K: Hashable, V>: ExpressibleByDictionaryLiteral {
             self.dict[key]
         }
     }
+}
+
+/// Applies the given function until the given predicate holds and returns its value.
+private func until<T>(_ pred: (T) -> Bool, _ f: (T) -> T, _ x: T) -> T {
+    var value = x
+    while !pred(value) {
+        value = f(value)
+    }
+    return value
 }

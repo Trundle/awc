@@ -13,11 +13,17 @@ enum Event {
     /// Raised by the seat when a client provides a cursor image.
     case cursorRequested(event: UnsafeMutablePointer<wlr_seat_pointer_request_set_cursor_event>)
 
+    /// This event is raised by the seat when a client wants to set the selection,
+    /// usually when the user copies something.
+    case setSelectionRequested(event: UnsafeMutablePointer<wlr_seat_request_set_selection_event>)
+
     case key(device: UnsafeMutablePointer<wlr_input_device>, event: UnsafeMutablePointer<wlr_event_keyboard_key>)
-    case modifiers(device: UnsafeMutablePointer<wlr_input_device>, keyboard: UnsafeMutablePointer<wlr_keyboard>)
+    case keyboardDestroyed(device: UnsafeMutablePointer<wlr_input_device>)
+    case modifiers(device: UnsafeMutablePointer<wlr_input_device>)
 
     case newInput(device: UnsafeMutablePointer<wlr_input_device>)
     case newOutput(output: UnsafeMutablePointer<wlr_output>)
+    case outputDestroyed(output: UnsafeMutablePointer<wlr_output>)
 
     case newSurface(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     case surfaceDestroyed(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)

@@ -9,7 +9,7 @@ import Wlroots
 
 // MARK: Wlroots compatibility structures
 
-private struct float_rgba {
+struct float_rgba {
     public var r: Float
     public var g: Float
     public var b: Float
@@ -20,7 +20,7 @@ private struct float_rgba {
     }
 }
 
-private typealias matrix9 = (Float, Float, Float, Float, Float, Float, Float, Float, Float)
+typealias matrix9 = (Float, Float, Float, Float, Float, Float, Float, Float, Float)
 
 // MARK: Wlroots convenience extensions
 
@@ -45,12 +45,19 @@ struct KeyModifiers: OptionSet {
     static let mod5 = KeyModifiers(rawValue: WLR_MODIFIER_MOD5.rawValue)
 }
 
+// XXX introduce some kind of configuration object instead?
+let borderWidth: Int32 = 2
+let activeBorderColor = float_rgba(r: 0.89, g: 0.773, b: 0.596, a: 1.0)
+let inactiveBorderColor = float_rgba(r: 0.541, g: 0.431, b: 0.392, a: 1.0)
+
 class Awc {
     var viewSet: ViewSet<Surface>
     private let wlEventHandler: WlEventHandler
+    let wlDisplay: OpaquePointer
+    let backend: UnsafeMutablePointer<wlr_backend>
     let outputLayout: UnsafeMutablePointer<wlr_output_layout>
     private let renderer: UnsafeMutablePointer<wlr_renderer>
-    private let noOpOutput: UnsafeMutablePointer<wlr_output>
+    let noOpOutput: UnsafeMutablePointer<wlr_output>
     let cursor: UnsafeMutablePointer<wlr_cursor>
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
@@ -59,11 +66,13 @@ class Awc {
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
     // The "mod" key to be used for ked bindings, typically logo
-    let mod: KeyModifiers = .alt
+    let mod: KeyModifiers = .logo
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
 
     init(
         wlEventHandler: WlEventHandler,
+        wlDisplay: OpaquePointer,
+        backend: UnsafeMutablePointer<wlr_backend>,
         noOpOutput: UnsafeMutablePointer<wlr_output>,
         outputLayout: UnsafeMutablePointer<wlr_output_layout>,
         renderer: UnsafeMutablePointer<wlr_renderer>,
@@ -77,12 +86,14 @@ class Awc {
             tag: "1",
             layout: layout
         )
-        let output = Output(wlrOutput: noOpOutput, workspace: workspace)
+        let output = Output(wlrOutput: noOpOutput, outputLayout: nil, workspace: workspace)
         var otherWorkspaces: [Workspace<Surface>] = []
         for i in 2...9 {
             otherWorkspaces.append(Workspace(tag: "\(i)", layout: layout))
         }
         self.viewSet = ViewSet(current: output, hidden: otherWorkspaces)
+        self.wlDisplay = wlDisplay
+        self.backend = backend
         self.outputLayout = outputLayout
         self.renderer = renderer
         self.noOpOutput = noOpOutput
@@ -91,7 +102,11 @@ class Awc {
         self.seat = seat
         self.xwayland = xwayland
         self.wlEventHandler = wlEventHandler
+    }
+
+    public func run() {
         self.wlEventHandler.onEvent = self.onEvent
+        wl_display_run(self.wlDisplay)
     }
 
     private func renderSurface(
@@ -146,11 +161,10 @@ class Awc {
         wlr_surface_send_frame_done(surface, when)
     }
 
-    private func viewAt(x: Double, y: Double)
-                    -> (UnsafeMutablePointer<wlr_surface>, UnsafeMutablePointer<wlr_surface>, Double, Double)?
+    private func viewAt(x: Double, y: Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
     {
         for output in self.viewSet.outputs() {
-            let outputLayoutBox = wlr_output_layout_get_box(self.outputLayout, output.output).pointee
+            let outputLayoutBox = output.box
             let outputX = x - Double(outputLayoutBox.x)
             let outputY = y - Double(outputLayoutBox.y)
             for (view, box) in output.arrangement.reversed() {
@@ -162,11 +176,11 @@ class Awc {
                     switch view {
                     case .xdg(let viewSurface):
                         if let surface = wlr_xdg_surface_surface_at(viewSurface, surfaceX, surfaceY, &sx, &sy) {
-                            return (view.wlrSurface, surface, sx, sy)
+                            return (view, surface, sx, sy)
                         }
                     case .xwayland:
                         if let surface = wlr_surface_surface_at(view.wlrSurface, surfaceX, surfaceY, &sx, &sy) {
-                            return (view.wlrSurface, surface, sx, sy)
+                            return (view, surface, sx, sy)
                         }
                     }
                 }
@@ -236,7 +250,7 @@ class Awc {
                 $0.shift(tag: "\(n)")
             }
             return true
-        } else if (([XKB_KEY_x, XKB_KEY_v, XKB_KEY_l].contains(Int32(sym)) && modifiers == [.alt])
+        } else if (([XKB_KEY_x, XKB_KEY_v, XKB_KEY_l].contains(Int32(sym)) && modifiers == [self.mod])
                 || ([XKB_KEY_X, XKB_KEY_V, XKB_KEY_L].contains(Int32(sym)) && modifiers == [.shift, self.mod]))
         {
             // Focus output n, with shift pressed move focused surface to output n
@@ -253,7 +267,7 @@ class Awc {
                 }
             }
             return true
-        } else if sym == XKB_KEY_F1 {
+        } else if sym == XKB_KEY_space && modifiers == [self.mod] {
             // Switch to next layout
             if let nextLayout = self.viewSet.current.workspace.layout.nextLayout() {
                 self.modifyAndUpdate {
@@ -267,6 +281,27 @@ class Awc {
                 self.modifyAndUpdate {
                     $0.sink(view: surface)
                 }
+            }
+            return true
+        } else if sym == XKB_KEY_e && modifiers == [self.mod] {
+            executeCommand("j4-dmenu-desktop --dmenu=whisker-menu")
+            return true
+        } else if sym >= XKB_KEY_XF86Switch_VT_1 && sym <= XKB_KEY_XF86Switch_VT_12 {
+            let n = sym - UInt32(XKB_KEY_XF86Switch_VT_1) + 1
+            if let session = wlr_backend_get_session(self.backend) {
+                wlr_session_change_vt(session, n)
+            }
+            return true
+        }
+        return false
+    }
+
+    func shouldFloat(surface: Surface) -> Bool {
+        // XXX This should come from some configuration file
+        if case .xdg(let xdgSurface) = surface {
+            if xdgSurface.pointee.role == WLR_XDG_SURFACE_ROLE_TOPLEVEL {
+                let appId = String(cString: xdgSurface.pointee.toplevel.pointee.app_id)
+                return appId == "whisker-menu"
             }
         }
         return false
@@ -284,11 +319,14 @@ extension Awc {
         case .cursorMotion(let cursor): handleCursorMotion(cursor)
         case .cursorMotionAbsolute(let cursor): handleCursorMotionAbsolute(cursor)
         case .cursorRequested(let event): handleCursorRequested(event)
+        case .setSelectionRequested(let event): handleSetSelectionRequested(event)
         case .frame(let output): handleFrame(output)
         case .key(let device, let keyEvent): handleKey(device, keyEvent)
-        case .modifiers(let device, _): handleModifiers(device)
+        case .keyboardDestroyed(let device): handleKeyboardDestroyed(device)
+        case .modifiers(let device): handleModifiers(device)
         case .newInput(let device): handleNewInput(device)
         case .newOutput(let output): handleNewOutput(output)
+        case .outputDestroyed(let output): handleOutputDestroyed(output)
         case .newSurface(let surface): handleNewXdgSurface(surface)
         case .surfaceDestroyed(let surface): handleSurfaceDestroyed(surface)
         case .map(let surface): handleMap(surface)
@@ -314,8 +352,17 @@ extension Awc {
     }
 
     private func handleCursorButton(_ event: UnsafeMutablePointer<wlr_event_pointer_button>) {
-        // XXX change focus here
-        // Notify the client with pointer focus that a button press has occurred
+        // Focus the surface under cursor if it's different from the current focus
+        if event.pointee.state == WLR_BUTTON_PRESSED {
+            if let (parent, surface, _, _) = self.viewAt(x: self.cursor.pointee.x, y: self.cursor.pointee.y) {
+                guard surface == self.seat.pointee.keyboard_state.focused_surface else {
+                    self.modifyAndUpdate { $0.focus(view: parent) }
+                    return
+                }
+            }
+        }
+
+        // Otherwise notify the client with pointer focus that a button press has occurred
         wlr_seat_pointer_notify_button(self.seat, event.pointee.time_msec, event.pointee.button, event.pointee.state)
     }
 
@@ -379,6 +426,10 @@ extension Awc {
         }
     }
 
+    private func handleSetSelectionRequested(_ event: UnsafeMutablePointer<wlr_seat_request_set_selection_event>) {
+        wlr_seat_set_selection(self.seat, event.pointee.source, event.pointee.serial)
+    }
+
     private func handleNewInput(_ device: UnsafeMutablePointer<wlr_input_device>) {
         if device.pointee.type == WLR_INPUT_DEVICE_KEYBOARD {
             let context = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
@@ -431,20 +482,6 @@ extension Awc {
             }
         }
 
-        if self.viewSet.current.output == self.noOpOutput {
-            self.viewSet = self.viewSet.replace(
-                current: Output(wlrOutput: wlrOutput, workspace: self.viewSet.current.workspace))
-        } else {
-            var hidden = Array(self.viewSet.hidden)
-            if let workspace = hidden.popLast() {
-                self.viewSet = self.viewSet.replace(
-                    current: Output(wlrOutput: wlrOutput, workspace: workspace),
-                    visible: Array(self.viewSet.visible) + [self.viewSet.current],
-                    hidden: hidden
-                )
-            }
-        }
-
         self.wlEventHandler.addOutputListeners(output: wlrOutput)
 
         // Adds this to the output layout. The add_auto function arranges outputs
@@ -454,10 +491,77 @@ extension Awc {
         // The output layout utility automatically adds a wl_output global to the
         // display, which Wayland clients can see to find out information about the
         // output (such as DPI, scale factor, manufacturer, etc).
-        wlr_output_layout_add_auto(self.outputLayout, wlrOutput)
+        let name = withUnsafePointer(to: wlrOutput.pointee.name) {
+            $0.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout.size(ofValue: $0)) {
+                String(cString: $0)
+            }
+        }
+        if name == "eDP-1" {
+           wlr_output_layout_add(self.outputLayout, wlrOutput, 0, 0)
+        } else if name == "DP-5" {
+            wlr_output_layout_add(self.outputLayout, wlrOutput, 1920, 0)
+        } else {
+            wlr_output_layout_add_auto(self.outputLayout, wlrOutput)
+        }
+
+        self.modifyAndUpdate {
+            if $0.current.output == self.noOpOutput {
+                let newOutput = Output(
+                    wlrOutput: wlrOutput, outputLayout: self.outputLayout, workspace: $0.current.workspace
+                )
+                return $0.replace(current: newOutput)
+            } else {
+                var hidden = Array(self.viewSet.hidden)
+                if let workspace = hidden.popLast() {
+                    let newOutput = Output(wlrOutput: wlrOutput, outputLayout: self.outputLayout, workspace: workspace)
+                    return $0.replace(
+                            current: newOutput,
+                            visible: Array(self.viewSet.visible) + [self.viewSet.current],
+                            hidden: hidden
+                    )
+                } else {
+                    return $0
+                }
+            }
+        }
 
         // Show a cursor
         wlr_xcursor_manager_set_cursor_image(self.cursorManager, "left_ptr", self.cursor)
+    }
+
+    private func handleOutputDestroyed(_ wlrOutput: UnsafeMutablePointer<wlr_output>) {
+        guard wlrOutput != self.noOpOutput else {
+            return
+        }
+
+        self.wlEventHandler.removeOutputListeners(output: wlrOutput)
+
+        self.modifyAndUpdate {
+            if $0.current.output == wlrOutput {
+                if let newCurrent = $0.visible.first {
+                    return $0.replace(
+                            current: newCurrent,
+                            visible: Array($0.visible[1...]),
+                            hidden: $0.hidden + [$0.current.workspace]
+                    )
+                } else {
+                    // This was the last output, migrate to no-op output
+                    let newCurrent = Output(
+                        wlrOutput: self.noOpOutput, outputLayout: nil, workspace: $0.current.workspace
+                    )
+                    return $0.replace(current: newCurrent)
+                }
+            } else if let output = $0.visible.first(where: { $0.output == wlrOutput }) {
+                return $0.replace(
+                        current: $0.current,
+                        visible: $0.visible.filter({ $0 !== output }),
+                        hidden: $0.hidden + [output.workspace]
+                )
+            } else {
+                print("[WARN] Got 'output destroyed' event for some unknown output o_O")
+                return $0
+            }
+        }
     }
 
     private func handleMap(_ xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
@@ -489,6 +593,7 @@ extension Awc {
     }
 
     private func handleSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        self.wlEventHandler.removeXdgSurfaceListeners(surface: surface)
         self.unmapped.remove(Surface.xdg(surface: surface))
     }
 
@@ -535,6 +640,7 @@ extension Awc {
     }
 
     private func handleXWaylandSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        self.wlEventHandler.removeXWaylandSurfaceListeners(surface: surface)
         self.unmapped.remove(Surface.xwayland(surface: surface))
     }
 
@@ -548,7 +654,7 @@ extension Awc {
             )
             if floating {
                 if let output = self.viewSet.findOutput(view: surface) {
-                    let outputLayoutBox = wlr_output_layout_get_box(self.outputLayout, output.output).pointee
+                    let outputLayoutBox = output.box
                     let newBox = wlr_box(
                             x: Int32(event.pointee.x) - outputLayoutBox.x,
                             y: Int32(event.pointee.y) - outputLayoutBox.y,
@@ -598,6 +704,11 @@ extension Awc {
         // Find the workspace for this output
         if let output = self.viewSet.outputs().first(where: { $0.output == wlrOutput }) {
             for (parent, box) in output.arrangement {
+                if !parent.wantsFloating(awc: self) {
+                    let color = output.workspace.stack?.focus == .some(parent) ? activeBorderColor : inactiveBorderColor
+                    drawBorder(renderer: self.renderer, output: output.output, box: box, width: borderWidth, color: color)
+                }
+
                 withUnsafePointer(to: now) {
                     for (surface, sx, sy) in parent.surfaces() {
                         self.renderSurface(
@@ -659,6 +770,10 @@ extension Awc {
             wlr_seat_keyboard_notify_key(
                     self.seat, event.pointee.time_msec, event.pointee.keycode, event.pointee.state.rawValue)
         }
+    }
+
+    private func handleKeyboardDestroyed(_ device: UnsafeMutablePointer<wlr_input_device>) {
+        self.wlEventHandler.removeKeyboardListeners(device: device)
     }
 
     private func handleModifiers(_ device: UnsafeMutablePointer<wlr_input_device>) {
@@ -783,7 +898,11 @@ func main() {
     let xwayland = setupXWayland(display: wlDisplay!, compositor: compositor!, wlEventHandler: wlEventHandler)
 
     let awc = Awc(
-        wlEventHandler: wlEventHandler, noOpOutput: noopOutput!, outputLayout: outputLayout!,
+        wlEventHandler: wlEventHandler,
+        wlDisplay: wlDisplay!,
+        backend: backend!,
+        noOpOutput: noopOutput!,
+        outputLayout: outputLayout!,
         renderer: renderer!,
         cursor: cursor!,
         cursorManager: cursorManager!,
@@ -796,7 +915,7 @@ func main() {
     // loop configuration to listen to libinput events, DRM events, generate
     // frame events at the refresh rate, and so on.
     print("[INFO] Running Wayland compositor on WAYLAND_DISPLAY=\(String(cString: socket))")
-    wl_display_run(wlDisplay)
+    awc.run()
 
     // Once wl_display_run returns, we shut down the server.
     wl_display_destroy_clients(wlDisplay)

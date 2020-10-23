@@ -32,39 +32,38 @@ extension Surface {
         }
     }
 
-    func preferredFloatingBox(awc: Awc, output: Output<Surface>) -> wlr_box? {
+    func preferredFloatingBox(awc: Awc, output: Output<Surface>) -> wlr_box {
         switch self {
         case .xdg(let surface):
-            if surface.pointee.toplevel.pointee.parent != nil {
-                let box = UnsafeMutableBufferPointer<wlr_box>.allocate(capacity: 1)
-                wlr_xdg_surface_get_geometry(surface, box.baseAddress!)
-                return box[0]
-            } else {
-                return nil
-            }
+            let box = UnsafeMutableBufferPointer<wlr_box>.allocate(capacity: 1)
+            wlr_xdg_surface_get_geometry(surface, box.baseAddress!)
+            return box[0]
         case .xwayland(let surface):
-            let constructBox: () -> wlr_box = {
-                let outputBox = wlr_output_layout_get_box(awc.outputLayout, output.output).pointee
-                return wlr_box(x: Int32(surface.pointee.x) - outputBox.x,
-                        y: Int32(surface.pointee.y) - outputBox.y,
-                        width: Int32(surface.pointee.width), height: Int32(surface.pointee.height))
-            }
+            let outputBox = output.box
+            return wlr_box(x: Int32(surface.pointee.x) - outputBox.x,
+                    y: Int32(surface.pointee.y) - outputBox.y,
+                    width: Int32(surface.pointee.width), height: Int32(surface.pointee.height))
+        }
+    }
 
+    func wantsFloating(awc: Awc) -> Bool {
+        switch self {
+        case .xdg(let surface): return surface.pointee.toplevel.pointee.parent != nil
+        case .xwayland(let surface):
             if surface.pointee.override_redirect || surface.pointee.modal {
-                return constructBox()
+                return true
             } else {
                 for i in 0..<surface.pointee.window_type_len {
                     if let type = awc.windowTypeAtoms[surface.pointee.window_type[i]] {
                         if [.dialog, .dropdownMenu, .menu, .notification, .popupMenu, .splash,
                             .toolbar, .tooltip, .utility
-                           ].contains(type)
-                        {
-                            return constructBox()
+                           ].contains(type) {
+                            return true
                         }
                     }
                 }
+                return false
             }
-            return nil
         }
     }
 
