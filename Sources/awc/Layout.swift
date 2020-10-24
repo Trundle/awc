@@ -31,7 +31,7 @@ public class TwoPane: Layout {
         case .cons(let main, _): return [(main, left), (stack.focus, right)]
         case .empty:
             switch stack.down {
-            case .cons(let next, _): return [(stack.focus, left), (next, right)]
+            case .cons(let next, _): return [(next, right), (stack.focus, left)]
             case .empty: return [(stack.focus, box)]
             }
         }
