@@ -1,20 +1,51 @@
 import Libawc
 import Wlroots
 
+// XXX Can this be parametrized over the view again?
 public protocol Layout {
-    func doLayout<View>(stack: Stack<View>, box: wlr_box) -> [(View, wlr_box)]
-    func nextLayout() -> Layout?
+    associatedtype View
+
+    // XXX
+    func emptyLayout<L: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<L, View>,
+        box: wlr_box
+    ) -> [(View, wlr_box)] where View == L.View
+
+    // XXX
+    func doLayout<L: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<L, View>,
+        stack: Stack<View>,
+        box: wlr_box
+    ) -> [(View, wlr_box)] where View == L.View
+
+    func nextLayout() -> Self?
 }
 
+// Default implementations
 extension Layout {
-    public func nextLayout() -> Layout? {
+    public func emptyLayout<L: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<L, View>,
+        box: wlr_box
+    ) -> [(View, wlr_box)] where View == L.View {
+        []
+    }
+
+    public func nextLayout() -> Self? {
         nil
     }
 }
 
-/// The simplest of all layouts: renders the focused surface fullscreen.
-public class Full : Layout {
-    public func doLayout<View>(stack: Stack<View>, box: wlr_box) -> [(View, wlr_box)] {
+// /// The simplest of all layouts: renders the focused surface fullscreen.
+public class Full<View> : Layout {
+    public func doLayout<L: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<L, View>,
+        stack: Stack<View>,
+        box: wlr_box
+    ) -> [(View, wlr_box)] where View == L.View {
         [(stack.focus, box)]
     }
 }
@@ -22,10 +53,15 @@ public class Full : Layout {
 /// A layout that splits the screen horizontally and shows two windows. The left window is always
 /// the main window, and the right is either the currently focused window or the second window in
 /// layout order.
-public class TwoPane: Layout {
+public class TwoPane<View>: Layout {
     private let split = 0.5
 
-    public func doLayout<View>(stack: Stack<View>, box: wlr_box) -> [(View, wlr_box)] {
+    public func doLayout<L: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<L, View>,
+        stack: Stack<View>,
+        box: wlr_box
+    ) -> [(View, wlr_box)] where L.View == View {
         let (left, right) = splitHorizontally(by: self.split, box: box)
         switch stack.up.reverse() {
         case .cons(let main, _): return [(main, left), (stack.focus, right)]
@@ -38,43 +74,59 @@ public class TwoPane: Layout {
     }
 }
 
-public class Choose: Layout {
-    private let current: Layout
-    private let next: List<Layout>
-    private let layouts: List<Layout>
+public final class Choose<Left: Layout, Right: Layout>: Layout where Left.View == Right.View {
+    private enum Branch {
+        case left
+        case right
+    }
+    private let current: Branch
+    private let left: Left
+    private let right: Right
+    private let start: (Left, Right)
 
-    public init(_ first: Layout, _ others: Layout...) {
-        self.current = first
-        self.next = List(collection: others)
-        self.layouts = first ++ self.next
+    public init(_ left: Left, _ right: Right) {
+        self.current = .left
+        self.left = left
+        self.right = right
+        self.start = (left, right)
     }
 
-    private init(current: Layout, next: List<Layout>, layouts: List<Layout>) {
-        assert(!layouts.isEmpty())
+    private init(left: Left, right: Right, current: Branch, start: (Left, Right)) {
         self.current = current
-        self.next = next
-        self.layouts = layouts
+        self.left = left
+        self.right = right
+        self.start = start
     }
 
-    public func doLayout<View>(stack: Stack<View>, box: wlr_box) -> [(View, wlr_box)] {
-        self.current.doLayout(stack: stack, box: box)
-    }
+    // XXX empty layout
 
-    public func nextLayout() -> Layout? {
-        if let nextLayout = current.nextLayout() {
-            return self.replace(current: nextLayout)
-        } else if case let .cons(nextLayout, next) = self.next {
-            return Choose(current: nextLayout, next: next, layouts: self.layouts)
-        } else if case let .cons(firstLayout, next) = self.layouts {
-            return Choose(current: firstLayout, next: next, layouts: self.layouts)
-        } else {
-            assertionFailure()
-            return nil
+    public func doLayout<L: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<L, Left.View>,
+        stack: Stack<Left.View>,
+        box: wlr_box
+    ) -> [(Left.View, wlr_box)] where L.View == Left.View {
+        switch self.current {
+        case .left: return self.left.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
+        case .right: return self.right.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
         }
     }
 
-    private func replace(current: Layout) -> Layout {
-        Choose(current: current, next: self.next, layouts: self.layouts)
+    public func nextLayout() -> Choose<Left, Right>? {
+        switch self.current {
+        case .left:
+            if let next = self.left.nextLayout() {
+                return Choose(left: next, right: self.right, current: self.current, start: self.start)
+            } else {
+                return Choose(left: self.left, right: self.right, current: .right, start: self.start)
+            }
+        case .right:
+            if let next = self.right.nextLayout() {
+                return Choose(left: self.left, right: next, current: self.current, start: self.start)
+            } else {
+                return Choose(left: self.start.0, right: self.start.1, current: .left, start: self.start)
+            }
+        }
     }
 }
 

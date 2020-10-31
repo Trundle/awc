@@ -22,6 +22,9 @@ extension Awc {
 
         // Activate the new surface
         switch focus {
+        case .layer(let surface):
+            // XXX what to do here?
+            ()
         case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface, true)
         case .xwayland(let surface):
             wlr_xwayland_surface_activate(surface, true)
@@ -46,7 +49,7 @@ extension Awc {
     }
 
     /// Modifies the view set with given function and then updates.
-    func modifyAndUpdate(_ f: (ViewSet<Surface>) -> ViewSet<Surface>) {
+    func modifyAndUpdate(_ f: (ViewSet<L, Surface>) -> ViewSet<L, Surface>) {
         self.viewSet = f(self.viewSet)
         self.updateLayout()
         self.focusTop()
@@ -81,13 +84,15 @@ extension Awc {
             )
 
             if let stack = output.workspace.stack?.filter({ !self.viewSet.floating.contains(key: $0) }) {
-                let arrangement = output.workspace.layout.doLayout(stack: stack, box: outputBox)
+                let arrangement =
+                    output.workspace.layout.doLayout(dataProvider: self, output: output, stack: stack, box: outputBox)
                 for (surface, box) in arrangement {
                     surface.configure(output: outputLayoutBox, box: box)
                 }
                 output.arrangement = arrangement
             } else {
-                output.arrangement = []
+                output.arrangement =
+                    output.workspace.layout.emptyLayout(dataProvider: self, output: output, box: outputBox)
             }
 
             // Add floating windows
@@ -106,6 +111,7 @@ extension Awc {
     func kill() {
         self.withFocused {
             switch $0 {
+            case .layer: /* layers cannot be closed */ ()
             case .xdg(let surface): wlr_xdg_toplevel_send_close(surface)
             case .xwayland(let surface): wlr_xwayland_surface_close(surface)
             }
@@ -120,7 +126,7 @@ extension Awc {
     }
 
     /// Returns an array of all outputs, where the first element is the left-most output.
-    func orderedOutputs() -> [Output<Surface>] {
+    func orderedOutputs() -> [Output<L, Surface>] {
         self.viewSet.outputs().sorted(by: { $0.box.x <= $1.box.x })
     }
 }

@@ -24,9 +24,35 @@ typealias matrix9 = (Float, Float, Float, Float, Float, Float, Float, Float, Flo
 
 // MARK: Wlroots convenience extensions
 
+// Swift version of `wl_container_of`
+internal func wlContainer<R>(of: UnsafeMutableRawPointer, _ path: PartialKeyPath<R>) -> UnsafeMutablePointer<R> {
+    (of - MemoryLayout<R>.offset(of: path)!).bindMemory(to: R.self, capacity: 1)
+}
+
 extension wlr_box {
     func contains(x: Int, y: Int) -> Bool {
         self.x <= x && x < self.x + self.width && self.y <= y && y < self.y + self.height
+    }
+}
+
+extension UnsafeMutablePointer where Pointee == wlr_surface {
+    func subsurface(of parent: UnsafeMutablePointer<wlr_surface>) -> Bool {
+        parent.pointee.subsurfaces.contains(\wlr_subsurface.parent_link, where: { $0.pointee.surface == self })
+    }
+}
+
+extension wl_list {
+    /// Returns whether the given predicate holds for some element. Doesn't mutate the list, even though the method
+    /// is marked as mutating.
+    mutating func contains<T>(_ path: WritableKeyPath<T, wl_list>, where: (UnsafeMutablePointer<T>) -> Bool) -> Bool {
+        var pos = wlContainer(of: UnsafeMutableRawPointer(self.next), path)
+        while withUnsafePointer(to: &pos.pointee[keyPath: path], { $0 != &self }) {
+            if `where`(pos) {
+                return true
+            }
+            pos = wlContainer(of: UnsafeMutableRawPointer(pos.pointee[keyPath: path].next), path)
+        }
+        return false
     }
 }
 
@@ -45,13 +71,26 @@ struct KeyModifiers: OptionSet {
     static let mod5 = KeyModifiers(rawValue: WLR_MODIFIER_MOD5.rawValue)
 }
 
+public protocol ExtensionDataProvider {
+    func getExtensionData<D>() -> D?
+}
+
 // XXX introduce some kind of configuration object instead?
 let borderWidth: Int32 = 2
 let activeBorderColor = float_rgba(r: 0.89, g: 0.773, b: 0.596, a: 1.0)
 let inactiveBorderColor = float_rgba(r: 0.541, g: 0.431, b: 0.392, a: 1.0)
 
-class Awc {
-    var viewSet: ViewSet<Surface>
+public class Awc<L: Layout> where L.View == Surface {
+    private struct ListenerKey: Hashable {
+        let emitter: UnsafeMutableRawPointer
+        let type: ObjectIdentifier
+
+        static func for_<E, L>(emitter: UnsafeMutablePointer<E>, type: L.Type) -> ListenerKey {
+            ListenerKey(emitter: UnsafeMutablePointer(emitter), type: ObjectIdentifier(type))
+        }
+    }
+
+    var viewSet: ViewSet<L, Surface>
     private let wlEventHandler: WlEventHandler
     let wlDisplay: OpaquePointer
     let backend: UnsafeMutablePointer<wlr_backend>
@@ -66,8 +105,10 @@ class Awc {
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
     // The "mod" key to be used for ked bindings, typically logo
-    let mod: KeyModifiers = .logo
+    let mod: KeyModifiers = .alt
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
+    private var listeners: [ListenerKey: UnsafeMutableRawPointer] = [:]
+    var extensionData: [ObjectIdentifier: Any] = [:]
 
     init(
         wlEventHandler: WlEventHandler,
@@ -79,15 +120,15 @@ class Awc {
         cursor: UnsafeMutablePointer<wlr_cursor>,
         cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>,
         seat: UnsafeMutablePointer<wlr_seat>,
-        xwayland: UnsafeMutablePointer<wlr_xwayland>
+        xwayland: UnsafeMutablePointer<wlr_xwayland>,
+        layout: L
     ) {
-        let layout = Choose(Full(), TwoPane())
-        let workspace: Workspace<Surface> = Workspace(
+        let workspace: Workspace<L, Surface> = Workspace(
             tag: "1",
             layout: layout
         )
         let output = Output(wlrOutput: noOpOutput, outputLayout: nil, workspace: workspace)
-        var otherWorkspaces: [Workspace<Surface>] = []
+        var otherWorkspaces: [Workspace<L, Surface>] = []
         for i in 2...9 {
             otherWorkspaces.append(Workspace(tag: "\(i)", layout: layout))
         }
@@ -107,6 +148,22 @@ class Awc {
     public func run() {
         self.wlEventHandler.onEvent = self.onEvent
         wl_display_run(self.wlDisplay)
+    }
+
+    internal func addExtensionData<D>(_ data: D) {
+        self.extensionData[ObjectIdentifier(D.self)] = data
+    }
+
+    internal func addListener<E, L: PListener>(_ emitter: UnsafeMutablePointer<E>, _ listener: UnsafeMutablePointer<L>) {
+        self.listeners[ListenerKey.for_(emitter: emitter, type: L.self)] = UnsafeMutableRawPointer(listener)
+    }
+
+    internal func removeListener<E, L: PListener>(_ emitter: UnsafeMutablePointer<E>, _ type: L.Type) {
+        if let listenerPtr = self.listeners.removeValue(forKey: ListenerKey.for_(emitter: emitter, type: type)) {
+            let typedListenerPtr = listenerPtr.bindMemory(to: type, capacity: 1)
+            typedListenerPtr.pointee.deregister()
+            typedListenerPtr.deallocate()
+        }
     }
 
     private func renderSurface(
@@ -173,15 +230,18 @@ class Awc {
                     let surfaceY = outputY - Double(box.y)
                     var sx: Double = 0
                     var sy: Double = 0
+
+                    let surface: UnsafeMutablePointer<wlr_surface>?
                     switch view {
+                    case .layer(let layerSurface):
+                        surface = wlr_layer_surface_v1_surface_at(layerSurface, surfaceX, surfaceY, &sx, &sy)
                     case .xdg(let viewSurface):
-                        if let surface = wlr_xdg_surface_surface_at(viewSurface, surfaceX, surfaceY, &sx, &sy) {
-                            return (view, surface, sx, sy)
-                        }
+                        surface = wlr_xdg_surface_surface_at(viewSurface, surfaceX, surfaceY, &sx, &sy)
                     case .xwayland:
-                        if let surface = wlr_surface_surface_at(view.wlrSurface, surfaceX, surfaceY, &sx, &sy) {
-                            return (view, surface, sx, sy)
-                        }
+                        surface = wlr_surface_surface_at(view.wlrSurface, surfaceX, surfaceY, &sx, &sy)
+                    }
+                    if surface != nil {
+                        return (view, surface!, sx, sy)
                     }
                 }
             }
@@ -190,6 +250,14 @@ class Awc {
     }
 
     private func handleKeyPress(modifiers: KeyModifiers, sym: xkb_keysym_t) -> Bool {
+        // XXX This depends on my layout :( :(
+        let shiftNumbers = [
+            XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright, XKB_KEY_guillemotleft,
+            XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark, XKB_KEY_leftdoublequotemark
+        ]
+        //let shiftNumbers = [XKB_KEY_exclam, XKB_KEY_quotedbl, XKB_KEY_section, XKB_KEY_dollar, XKB_KEY_percent,
+        //                    XKB_KEY_ampersand, XKB_KEY_slash, XKB_KEY_parenleft, XKB_KEY_parenright]
+
         if sym == XKB_KEY_n && modifiers == [self.mod] {
             // Move focus to the next surface
             self.modifyAndUpdate {
@@ -239,13 +307,9 @@ class Awc {
                 $0.view(tag: "\(n)")
             }
             return true
-        } else if [XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright,
-                   XKB_KEY_guillemotleft, XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark,
-                   XKB_KEY_leftdoublequotemark].contains(Int32(sym)) && modifiers == [.shift, self.mod] {
+        } else if shiftNumbers.contains(Int32(sym)) && modifiers == [.shift, self.mod] {
             // Move focused surface to workspace n
-            let n = 1 + [XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright,
-                         XKB_KEY_guillemotleft, XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark,
-                         XKB_KEY_leftdoublequotemark].firstIndex(of: Int32(sym))!
+            let n = 1 + shiftNumbers.firstIndex(of: Int32(sym))!
             self.modifyAndUpdate {
                 $0.shift(tag: "\(n)")
             }
@@ -308,6 +372,12 @@ class Awc {
     }
 }
 
+extension Awc: ExtensionDataProvider {
+    public func getExtensionData<D>() -> D? {
+        self.extensionData[ObjectIdentifier(D.self)] as? D
+    }
+}
+
 // MARK: Event handling
 
 extension Awc {
@@ -327,10 +397,6 @@ extension Awc {
         case .newInput(let device): handleNewInput(device)
         case .newOutput(let output): handleNewOutput(output)
         case .outputDestroyed(let output): handleOutputDestroyed(output)
-        case .newSurface(let surface): handleNewXdgSurface(surface)
-        case .surfaceDestroyed(let surface): handleSurfaceDestroyed(surface)
-        case .map(let surface): handleMap(surface)
-        case .unmap(let surface): handleUnmap(surface)
         case .xwaylandReady: handleXWaylandReady()
         case .newXWaylandSurface(let surface): handleNewXWaylandSurface(surface)
         case .xwaylandSurfaceDestroyed(let surface): handleXWaylandSurfaceDestroyed(surface)
@@ -355,9 +421,16 @@ extension Awc {
         // Focus the surface under cursor if it's different from the current focus
         if event.pointee.state == WLR_BUTTON_PRESSED {
             if let (parent, surface, _, _) = self.viewAt(x: self.cursor.pointee.x, y: self.cursor.pointee.y) {
-                guard surface == self.seat.pointee.keyboard_state.focused_surface else {
-                    self.modifyAndUpdate { $0.focus(view: parent) }
-                    return
+                switch parent {
+                case .layer: ()
+                default:
+                    let keyboardFocus = self.seat.pointee.keyboard_state.focused_surface
+                    guard surface == keyboardFocus || surface.subsurface(of: parent.wlrSurface) else {
+                        self.modifyAndUpdate {
+                            $0.focus(view: parent)
+                        }
+                        return
+                    }
                 }
             }
         }
@@ -564,37 +637,11 @@ extension Awc {
         }
     }
 
-    private func handleMap(_ xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        let surface = Surface.xdg(surface: xdgSurface)
-        if self.unmapped.remove(surface) != nil {
-            self.manage(surface: surface)
-        }
-    }
-
-    private func handleUnmap(_ xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        handleUnmap(surface: Surface.xdg(surface: xdgSurface))
-    }
-
-    private func handleUnmap(surface: Surface) {
+    internal func handleUnmap(surface: Surface) {
         self.modifyAndUpdate {
             self.unmapped.insert(surface)
             return $0.remove(view: surface)
         }
-    }
-
-    private func handleNewXdgSurface(_ surface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        // XXX does it require additional checks?
-        guard surface.pointee.role == WLR_XDG_SURFACE_ROLE_TOPLEVEL else {
-            return
-        }
-        self.unmapped.insert(Surface.xdg(surface: surface))
-        self.wlEventHandler.addXdgSurfaceListeners(surface: surface)
-        wlr_xdg_surface_ping(surface)
-    }
-
-    private func handleSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        self.wlEventHandler.removeXdgSurfaceListeners(surface: surface)
-        self.unmapped.remove(Surface.xdg(surface: surface))
     }
 
     // Called when XWayland is ready. Retrieves the X atoms (e.g. window types etc).
@@ -802,7 +849,11 @@ func main() {
     wlr_log_init(WLR_DEBUG, nil)
     // The Wayland display is managed by libwayland. It handles accepting clients from the Unix
     // socket, managing Wayland globals, and so on.
-    let wlDisplay = wl_display_create()
+    guard let wlDisplay = wl_display_create() else {
+        print("[ERROR] Could not create Wayland display :( :(")
+        return
+    }
+
     // The backend is a wlroots feature which abstracts the underlying input and
     // output hardware. The autocreate option will choose the most suitable
     // backend based on the current environment, such as opening an X11 window
@@ -837,11 +888,6 @@ func main() {
     let outputLayout = wlr_output_layout_create()
 
     let wlEventHandler = WlEventHandler()
-
-    // Set up our list of views and the xdg-shell. The xdg-shell is a Wayland
-    // protocol which is used for application windows.
-    let xdg_shell = wlr_xdg_shell_create(wlDisplay)
-    wlEventHandler.addXdgShellListeners(xdgShell: xdg_shell!)
 
     // Configures a seat, which is a single "seat" at which a user sits and
     // operates the computer. This conceptually includes up to one keyboard,
@@ -895,11 +941,13 @@ func main() {
 
     wlr_gamma_control_manager_v1_create(wlDisplay)
 
-    let xwayland = setupXWayland(display: wlDisplay!, compositor: compositor!, wlEventHandler: wlEventHandler)
+    let xwayland = setupXWayland(display: wlDisplay, compositor: compositor!, wlEventHandler: wlEventHandler)
 
+    let full = Full<Surface>()
+    let layout = LayerLayout(wrapped: Choose(full, TwoPane()))
     let awc = Awc(
         wlEventHandler: wlEventHandler,
-        wlDisplay: wlDisplay!,
+        wlDisplay: wlDisplay,
         backend: backend!,
         noOpOutput: noopOutput!,
         outputLayout: outputLayout!,
@@ -907,8 +955,12 @@ func main() {
         cursor: cursor!,
         cursorManager: cursorManager!,
         seat: seat!,
-        xwayland: xwayland
+        xwayland: xwayland,
+        layout: layout
     )
+
+    setUpXdgShell(display: wlDisplay, awc: awc)
+    setupLayerShell(display: wlDisplay, awc: awc)
 
     // Run the Wayland event loop. This does not return until you exit the
     // compositor. Starting the backend rigged up all of the necessary event

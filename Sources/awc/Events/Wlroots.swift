@@ -36,9 +36,6 @@ private struct Listeners {
     var requestCursor: wl_listener = wl_listener()
     var requestSetSelection: wl_listener = wl_listener()
 
-    // XDG Shell
-    var newXdgSurface: wl_listener = wl_listener()
-
     // XWayland
     var xwaylandReady: wl_listener = wl_listener()
     var newXWaylandSurface: wl_listener = wl_listener()
@@ -54,7 +51,57 @@ private struct Listeners {
     }
 }
 
-private protocol Listener {
+/// XXX rename
+protocol PListener {
+    associatedtype Emitter
+    associatedtype Handler
+
+    var handler: Handler? { get set }
+    init()
+    mutating func listen(to: UnsafeMutablePointer<Emitter>)
+    mutating func deregister()
+}
+
+extension PListener {
+    // N.B. Caller is responsible for deallocating again
+    static func newFor(
+        emitter: UnsafeMutablePointer<Emitter>,
+        handler: Handler
+    ) -> UnsafeMutablePointer<Self> {
+        let listener = UnsafeMutablePointer<Self>.allocate(capacity: 1)
+        listener.initialize(to: Self())
+        listener.pointee.handler = handler
+        listener.pointee.listen(to: emitter)
+        return listener
+    }
+
+    internal static func add(
+        signal: UnsafeMutablePointer<wl_signal>,
+        listener: inout wl_listener,
+        _ notify: @escaping @convention(c) (UnsafeMutablePointer<wl_listener>?, UnsafeMutableRawPointer?) -> ()
+    ) {
+        assert(listener.notify == nil)
+
+        listener.notify = notify
+        wl_signal_add(signal, &listener)
+    }
+
+    internal static func handle<D, L: PListener>(
+        from: UnsafeMutableRawPointer,
+        data: UnsafeMutableRawPointer,
+        _ path: PartialKeyPath<L>,
+        _ handlerCallback: (L.Handler, UnsafeMutablePointer<D>) -> ()
+    ) {
+        let listenersPtr = wlContainer(of: from, path)
+        let typedData = data.bindMemory(to: D.self, capacity: 1)
+        if let handler = listenersPtr.pointee.handler {
+            handlerCallback(handler, typedData)
+        }
+    }
+}
+
+/// A listener for Wayland signals.
+protocol Listener {
     associatedtype Emitter
 
     var handler: WlEventHandler? { get set }
@@ -64,6 +111,7 @@ private protocol Listener {
 }
 
 extension Listener {
+    // N.B. Caller is responsible for deallocating again
     static func newFor(
         emitter: UnsafeMutablePointer<Emitter>,
         handler: WlEventHandler
@@ -73,6 +121,63 @@ extension Listener {
         listener.pointee.handler = handler
         listener.pointee.listen(to: emitter)
         return listener
+    }
+
+    internal static func add(
+        signal: UnsafeMutablePointer<wl_signal>,
+        listener: inout wl_listener,
+        _ notify: @escaping @convention(c) (UnsafeMutablePointer<wl_listener>?, UnsafeMutableRawPointer?) -> ()
+    ) {
+        assert(listener.notify == nil)
+
+        listener.notify = notify
+        wl_signal_add(signal, &listener)
+    }
+
+    internal static func emitEvent<D, L: Listener>(
+        from: UnsafeMutableRawPointer,
+        data: UnsafeMutableRawPointer,
+        _ path: PartialKeyPath<L>,
+        _ factory: (UnsafeMutablePointer<D>) -> Event
+    ) {
+        let listenersPtr = wlContainer(of: from, path)
+        let typedData = data.bindMemory(to: D.self, capacity: 1)
+        let event = factory(typedData)
+        listenersPtr.pointee.handler?.onEvent(event)
+    }
+
+    internal static func emitEventWithState<D, L: Listener, S>(
+        from: UnsafeMutableRawPointer,
+        data: UnsafeMutableRawPointer,
+        _ path: PartialKeyPath<L>,
+        _ statePath: KeyPath<L, S?>,
+        _ eventFactory: (S, UnsafeMutablePointer<D>) -> Event
+    ) {
+        let listenerPtr = wlContainer(of: from, path)
+        if let state = listenerPtr.pointee[keyPath: statePath] {
+            let typedData = data.bindMemory(to: D.self, capacity: 1)
+            listenerPtr.pointee.handler?.onEvent(eventFactory(state, typedData))
+        }
+    }
+}
+
+protocol OutputDestroyedHandler: class {
+    func destroyed(output: UnsafeMutablePointer<wlr_output>)
+}
+
+/// A specialized listener for an output: listens to destroy events.
+struct OutputDestroyListener: PListener {
+    weak var handler: OutputDestroyedHandler?
+    private var destroyed: wl_listener = wl_listener()
+
+    internal mutating func listen(to output: UnsafeMutablePointer<wlr_output>) {
+        Self.add(signal: &output.pointee.events.destroy, listener: &self.destroyed) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.destroyed, { $0.destroyed(output: $1) })
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.destroyed.link)
     }
 }
 
@@ -86,11 +191,11 @@ private struct OutputListener: Listener {
     private var outputDestroyed: wl_listener = wl_listener()
 
     fileprivate mutating func listen(to output: UnsafeMutablePointer<wlr_output>) {
-        add(signal: &output.pointee.events.frame, listener: &self.frame) { (listener, data) in
-            emitEvent(from: listener!, data: data!, \OutputListener.frame, { Event.frame(output: $0) })
+        OutputListener.add(signal: &output.pointee.events.frame, listener: &self.frame) { (listener, data) in
+            OutputListener.emitEvent(from: listener!, data: data!, \OutputListener.frame, { Event.frame(output: $0) })
         }
-        add(signal: &output.pointee.events.destroy, listener: &self.outputDestroyed) { listener, data in
-            emitEvent(from: listener!, data: data!,
+        OutputListener.add(signal: &output.pointee.events.destroy, listener: &self.outputDestroyed) { listener, data in
+            OutputListener.emitEvent(from: listener!, data: data!,
                     \OutputListener.outputDestroyed, { Event.outputDestroyed(output: $0) }
             )
         }
@@ -113,8 +218,11 @@ private struct KeyboardListener: Listener {
     fileprivate mutating func listen(to keyboard: UnsafeMutablePointer<wlr_input_device>) {
         self.keyboard = keyboard
 
-        add(signal: &keyboard.pointee.keyboard.pointee.events.destroy, listener: &self.destroy) { (listener, data) in
-            emitEventWithState(
+        KeyboardListener.add(
+            signal: &keyboard.pointee.keyboard.pointee.events.destroy,
+            listener: &self.destroy
+        ) { (listener, data) in
+            KeyboardListener.emitEventWithState(
                 from: listener!,
                 data: data!,
                 \KeyboardListener.destroy,
@@ -123,8 +231,11 @@ private struct KeyboardListener: Listener {
             )
         }
 
-        add(signal: &keyboard.pointee.keyboard.pointee.events.modifiers, listener: &self.modifiers) { (listener, data) in
-            emitEventWithState(
+        KeyboardListener.add(
+            signal: &keyboard.pointee.keyboard.pointee.events.modifiers,
+            listener: &self.modifiers
+        ) { (listener, data) in
+            KeyboardListener.emitEventWithState(
                 from: listener!,
                 data: data!,
                 \KeyboardListener.modifiers,
@@ -133,8 +244,11 @@ private struct KeyboardListener: Listener {
             )
         }
 
-        add(signal: &keyboard.pointee.keyboard.pointee.events.key, listener: &self.key) { (listener, data) in
-            emitEventWithState(
+        KeyboardListener.add(
+            signal: &keyboard.pointee.keyboard.pointee.events.key,
+            listener: &self.key
+        ) { (listener, data) in
+            KeyboardListener.emitEventWithState(
                 from: listener!,
                 data: data!,
                 \KeyboardListener.key,
@@ -151,36 +265,6 @@ private struct KeyboardListener: Listener {
     }
 }
 
-/// Signal listeners for an XDG surface.
-private struct XdgSurfaceListener: Listener {
-    weak var handler: WlEventHandler?
-    private var destroy: wl_listener = wl_listener()
-    private var map: wl_listener = wl_listener()
-    private var unmap: wl_listener = wl_listener()
-
-    fileprivate mutating func listen(to surface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        add(signal: &surface.pointee.events.destroy, listener: &self.destroy) { (listener, data) in
-            emitEvent(
-                from: listener!, data: data!, \XdgSurfaceListener.destroy, { Event.surfaceDestroyed(xdgSurface: $0) }
-            )
-        }
-
-        add(signal: &surface.pointee.events.map, listener: &self.map) { (listener, data) in
-            emitEvent(from: listener!, data: data!, \XdgSurfaceListener.map, { Event.map(xdgSurface: $0) })
-        }
-
-        add(signal: &surface.pointee.events.unmap, listener: &self.unmap) { (listener, data) in
-            emitEvent(from: listener!, data: data!, \XdgSurfaceListener.unmap, { Event.unmap(xdgSurface: $0) })
-        }
-    }
-
-    mutating func deregister() {
-        wl_list_remove(&self.destroy.link)
-        wl_list_remove(&self.map.link)
-        wl_list_remove(&self.unmap.link)
-    }
-}
-
 /// Signal listeners for an XWayland surface.
 private struct XWaylandSurfaceListener: Listener {
     weak var handler: WlEventHandler?
@@ -190,8 +274,11 @@ private struct XWaylandSurfaceListener: Listener {
     private var unmap: wl_listener = wl_listener()
 
     fileprivate mutating func listen(to surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
-        add(signal: &surface.pointee.events.request_configure, listener: &self.configureRequest) { (listener, data) in
-            emitEvent(
+        XWaylandSurfaceListener.add(
+            signal: &surface.pointee.events.request_configure,
+            listener: &self.configureRequest
+        ) { (listener, data) in
+            XWaylandSurfaceListener.emitEvent(
                 from: listener!,
                 data: data!,
                 \XWaylandSurfaceListener.configureRequest,
@@ -199,8 +286,11 @@ private struct XWaylandSurfaceListener: Listener {
             )
         }
 
-        add(signal: &surface.pointee.events.destroy, listener: &self.destroy) { (listener, data) in
-            emitEvent(
+        XWaylandSurfaceListener.add(
+            signal: &surface.pointee.events.destroy,
+            listener: &self.destroy
+        ) { (listener, data) in
+            XWaylandSurfaceListener.emitEvent(
                 from: listener!,
                 data: data!,
                 \XWaylandSurfaceListener.destroy,
@@ -208,8 +298,8 @@ private struct XWaylandSurfaceListener: Listener {
             )
         }
 
-        add(signal: &surface.pointee.events.map, listener: &self.map) { (listener, data) in
-            emitEvent(
+        XWaylandSurfaceListener.add(signal: &surface.pointee.events.map, listener: &self.map) { (listener, data) in
+            XWaylandSurfaceListener.emitEvent(
                 from: listener!,
                 data: data!,
                 \XWaylandSurfaceListener.map,
@@ -217,8 +307,8 @@ private struct XWaylandSurfaceListener: Listener {
             )
         }
 
-        add(signal: &surface.pointee.events.unmap, listener: &self.unmap) { (listener, data) in
-            emitEvent(
+        XWaylandSurfaceListener.add(signal: &surface.pointee.events.unmap, listener: &self.unmap) { (listener, data) in
+            XWaylandSurfaceListener.emitEvent(
                 from: listener!,
                 data: data!,
                 \XWaylandSurfaceListener.unmap,
@@ -330,8 +420,10 @@ class WlEventHandler {
     }
 
     private func removeListener<E, L: Listener>(_ emitter: UnsafeMutablePointer<E>, _ type: L.Type) {
-        if let listener = self.listeners.removeValue(forKey: UnsafeMutableRawPointer(emitter)) {
-            listener.bindMemory(to: type, capacity: 1).pointee.deregister()
+        if let listenerPtr = self.listeners.removeValue(forKey: UnsafeMutableRawPointer(emitter)) {
+            let typedListenerPtr = listenerPtr.bindMemory(to: type, capacity: 1)
+            typedListenerPtr.pointee.deregister()
+            typedListenerPtr.deallocate()
         }
     }
 
@@ -365,26 +457,6 @@ class WlEventHandler {
         }
         wl_signal_add(&seat.pointee.events.request_set_cursor, &self.singletonListeners.requestCursor)
         wl_signal_add(&seat.pointee.events.request_set_selection, &self.singletonListeners.requestSetSelection)
-    }
-
-    func addXdgShellListeners(xdgShell: UnsafeMutablePointer<wlr_xdg_shell>) {
-        assert(self.singletonListeners.newXWaylandSurface.notify == nil)
-
-        self.singletonListeners.newXdgSurface.notify = { (listener, data) in
-            WlEventHandler.emitEvent(from: listener!, data: data!, \Listeners.newXdgSurface,
-                    { Event.newSurface(xdgSurface: $0) })
-        }
-        wl_signal_add(&xdgShell.pointee.events.new_surface, &self.singletonListeners.newXdgSurface)
-    }
-
-    func addXdgSurfaceListeners(surface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        self.addListener(surface, XdgSurfaceListener.newFor(emitter: surface, handler: self))
-
-        // XXX add toplevel listeners
-    }
-
-    func removeXdgSurfaceListeners(surface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        self.removeListener(surface, XdgSurfaceListener.self)
     }
 
     func addXWaylandListeners(xwayland: UnsafeMutablePointer<wlr_xwayland>) {
@@ -426,47 +498,5 @@ class WlEventHandler {
         let typedData = data.bindMemory(to: D.self, capacity: 1)
         let event = factory(typedData)
         listenersPtr.pointee.onEvent(event)
-    }
-}
-
-// Swift version of `wl_container_of`
-private func wlContainer<R>(of: UnsafeMutableRawPointer, _ path: PartialKeyPath<R>) -> UnsafeMutablePointer<R> {
-    (of - MemoryLayout<R>.offset(of: path)!).bindMemory(to: R.self, capacity: 1)
-}
-
-private func add(
-    signal: UnsafeMutablePointer<wl_signal>,
-    listener: inout wl_listener,
-    _ notify: @escaping @convention(c) (UnsafeMutablePointer<wl_listener>?, UnsafeMutableRawPointer?) -> ()
-) {
-    assert(listener.notify == nil)
-
-    listener.notify = notify
-    wl_signal_add(signal, &listener)
-}
-
-private func emitEvent<D, L: Listener>(
-    from: UnsafeMutableRawPointer,
-    data: UnsafeMutableRawPointer,
-    _ path: PartialKeyPath<L>,
-    _ factory: (UnsafeMutablePointer<D>) -> Event
-) {
-    let listenersPtr = wlContainer(of: from, path)
-    let typedData = data.bindMemory(to: D.self, capacity: 1)
-    let event = factory(typedData)
-    listenersPtr.pointee.handler?.onEvent(event)
-}
-
-private func emitEventWithState<D, L: Listener, S>(
-    from: UnsafeMutableRawPointer,
-    data: UnsafeMutableRawPointer,
-    _ path: PartialKeyPath<L>,
-    _ statePath: KeyPath<L, S?>,
-    _ eventFactory: (S, UnsafeMutablePointer<D>) -> Event
-) {
-    let listenerPtr = wlContainer(of: from, path)
-    if let state = listenerPtr.pointee[keyPath: statePath] {
-        let typedData = data.bindMemory(to: D.self, capacity: 1)
-        listenerPtr.pointee.handler?.onEvent(eventFactory(state, typedData))
     }
 }

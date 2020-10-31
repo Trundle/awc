@@ -28,7 +28,10 @@ Sources/Wlroots/xdg-shell-protocol.c: Sources/Wlroots/xdg-shell-protocol.h
 	$(WAYLAND_SCANNER) private-code \
 		$(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $@
 
-awc: Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c
+Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h:
+	$(WAYLAND_SCANNER) server-header Sources/Wlroots/protocols/wlr-layer-shell-unstable-v1.xml $@
+
+awc: Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h
 	swift build \
 	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
 		-Xcc -DWLR_USE_UNSTABLE \
