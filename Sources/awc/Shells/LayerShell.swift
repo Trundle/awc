@@ -469,6 +469,10 @@ final class LayerLayout<WrappedLayout: Layout>: Layout where WrappedLayout.View 
         return arrangement
     }
 
+    func firstLayout() -> LayerLayout<WrappedLayout> {
+        LayerLayout(wrapped: self.wrapped.firstLayout())
+    }
+
     func nextLayout() -> LayerLayout<WrappedLayout>? {
         if let next = wrapped.nextLayout() {
             return LayerLayout(wrapped: next, data: self.data)

@@ -1,18 +1,17 @@
 import Libawc
 import Wlroots
 
-// XXX Can this be parametrized over the view again?
 public protocol Layout {
     associatedtype View
 
-    // XXX
+    /// Called when there are no views.
     func emptyLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
         output: Output<L, View>,
         box: wlr_box
     ) -> [(View, wlr_box)] where View == L.View
 
-    // XXX
+    /// Arrange the list of given views.
     func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
         output: Output<L, View>,
@@ -20,6 +19,7 @@ public protocol Layout {
         box: wlr_box
     ) -> [(View, wlr_box)] where View == L.View
 
+    func firstLayout() -> Self
     func nextLayout() -> Self?
 }
 
@@ -31,6 +31,10 @@ extension Layout {
         box: wlr_box
     ) -> [(View, wlr_box)] where View == L.View {
         []
+    }
+
+    public func firstLayout() -> Self {
+        return self
     }
 
     public func nextLayout() -> Self? {
@@ -98,7 +102,16 @@ public final class Choose<Left: Layout, Right: Layout>: Layout where Left.View =
         self.start = start
     }
 
-    // XXX empty layout
+    public func emptyLayout<L: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<L, Left.View>,
+        box: wlr_box
+    ) -> [(Left.View, wlr_box)] where L.View == Left.View {
+        switch self.current {
+        case .left: return self.left.emptyLayout(dataProvider: dataProvider, output: output, box: box)
+        case .right: return self.right.emptyLayout(dataProvider: dataProvider, output: output, box: box)
+        }
+    }
 
     public func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
@@ -110,6 +123,10 @@ public final class Choose<Left: Layout, Right: Layout>: Layout where Left.View =
         case .left: return self.left.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
         case .right: return self.right.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
         }
+    }
+
+    public func firstLayout() -> Choose<Left, Right> {
+        return Choose(left: self.start.0, right: self.start.1, current: .left, start: self.start)
     }
 
     public func nextLayout() -> Choose<Left, Right>? {
@@ -124,11 +141,54 @@ public final class Choose<Left: Layout, Right: Layout>: Layout where Left.View =
             if let next = self.right.nextLayout() {
                 return Choose(left: self.left, right: next, current: self.current, start: self.start)
             } else {
-                return Choose(left: self.start.0, right: self.start.1, current: .left, start: self.start)
+                return nil
             }
         }
     }
 }
+
+infix operator |||: LogicalDisjunctionPrecedence
+
+func |||<L: Layout, R: Layout>(left: L, right: R) -> Choose<L, R> where L.View == R.View {
+    Choose(left, right)
+}
+
+/// Rotates another layout by 90 degrees.
+public final class Rotated<L: Layout>: Layout {
+    private let layout: L
+
+    init(layout: L) {
+        self.layout = layout
+    }
+
+    public func emptyLayout<M: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<M, L.View>,
+        box: wlr_box
+    ) -> [(L.View, wlr_box)] where M.View == L.View {
+        self.layout
+            .emptyLayout(dataProvider: dataProvider, output: output, box: box.rotated())
+            .map { (view, viewBox) in (view, viewBox.rotated()) }
+    }
+
+    public func doLayout<M: Layout>(
+        dataProvider: ExtensionDataProvider,
+        output: Output<M, L.View>,
+        stack: Stack<L.View>,
+        box: wlr_box
+    ) -> [(L.View, wlr_box)] where M.View == L.View {
+        self.layout
+            .doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box.rotated())
+            .map { (view, viewBox) in (view, viewBox.rotated()) }
+    }
+}
+
+private extension wlr_box {
+    func rotated() -> wlr_box {
+        wlr_box(x: self.y, y: self.x, width: self.height, height: self.width)
+    }
+}
+
 
 /// Divides the display into two rectangles with the given ratio.
 func splitHorizontally(by: Double, box: wlr_box) -> (wlr_box, wlr_box) {

@@ -330,10 +330,10 @@ public class Awc<L: Layout> where L.View == Surface {
             return true
         } else if sym == XKB_KEY_space && modifiers == [self.mod] {
             // Switch to next layout
-            if let nextLayout = self.viewSet.current.workspace.layout.nextLayout() {
-                self.modifyAndUpdate {
-                    $0.replace(current: $0.current.replace(workspace: $0.current.workspace.replace(layout: nextLayout)))
-                }
+            let layout =  self.viewSet.current.workspace.layout
+            let nextLayout = layout.nextLayout() ?? layout.firstLayout()
+            self.modifyAndUpdate {
+                $0.replace(current: $0.current.replace(workspace: $0.current.workspace.replace(layout: nextLayout)))
             }
             return true
         } else if sym == XKB_KEY_t && modifiers == [self.mod] {
@@ -841,7 +841,7 @@ func main() {
     wlr_gamma_control_manager_v1_create(wlDisplay)
 
     let full = Full<Surface>()
-    let layout = LayerLayout(wrapped: Choose(full, TwoPane()))
+    let layout = LayerLayout(wrapped: full ||| TwoPane() ||| Rotated(layout: TwoPane()))
     let awc = Awc(
         wlEventHandler: wlEventHandler,
         wlDisplay: wlDisplay,
