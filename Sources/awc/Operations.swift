@@ -28,7 +28,9 @@ extension Awc {
         case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface, true)
         case .xwayland(let surface):
             wlr_xwayland_surface_activate(surface, true)
-            wlr_xwayland_set_seat(self.xwayland, self.seat)
+            if let xwayland: UnsafeMutablePointer<wlr_xwayland> = self.getExtensionData() {
+                wlr_xwayland_set_seat(xwayland, self.seat)
+            }
         case .none:
             // There is no new surface -take away keyboard focus from previous surface
             wlr_seat_keyboard_clear_focus(self.seat)

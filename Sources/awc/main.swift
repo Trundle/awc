@@ -100,7 +100,6 @@ public class Awc<L: Layout> where L.View == Surface {
     let cursor: UnsafeMutablePointer<wlr_cursor>
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
-    let xwayland: UnsafeMutablePointer<wlr_xwayland>
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
@@ -120,7 +119,6 @@ public class Awc<L: Layout> where L.View == Surface {
         cursor: UnsafeMutablePointer<wlr_cursor>,
         cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>,
         seat: UnsafeMutablePointer<wlr_seat>,
-        xwayland: UnsafeMutablePointer<wlr_xwayland>,
         layout: L
     ) {
         let workspace: Workspace<L, Surface> = Workspace(
@@ -141,7 +139,6 @@ public class Awc<L: Layout> where L.View == Surface {
         self.cursor = cursor
         self.cursorManager = cursorManager
         self.seat = seat
-        self.xwayland = xwayland
         self.wlEventHandler = wlEventHandler
     }
 
@@ -397,12 +394,6 @@ extension Awc {
         case .newInput(let device): handleNewInput(device)
         case .newOutput(let output): handleNewOutput(output)
         case .outputDestroyed(let output): handleOutputDestroyed(output)
-        case .xwaylandReady: handleXWaylandReady()
-        case .newXWaylandSurface(let surface): handleNewXWaylandSurface(surface)
-        case .xwaylandSurfaceDestroyed(let surface): handleXWaylandSurfaceDestroyed(surface)
-        case .configureRequestX(let event): handleConfigureRequestX(event)
-        case .mapX(let surface): handleMapX(surface)
-        case .unmapX(let surface): handleUnmapX(surface)
         }
     }
 
@@ -644,87 +635,6 @@ extension Awc {
         }
     }
 
-    // Called when XWayland is ready. Retrieves the X atoms (e.g. window types etc).
-    private func handleXWaylandReady() {
-        let xcbConn = xcb_connect(nil, nil)
-        let err = xcb_connection_has_error(xcbConn)
-        guard err == 0 else {
-            print("[ERROR] XBC connect failed: \(err)")
-            return
-        }
-
-        let cookies = UnsafeMutableBufferPointer<xcb_intern_atom_cookie_t>
-                .allocate(capacity: AtomWindowType.allCases.count)
-        for (i, type) in AtomWindowType.allCases.enumerated() {
-            type.rawValue.withCString {
-                cookies[i] = xcb_intern_atom(xcbConn, 0, UInt16(type.rawValue.count), $0)
-            }
-        }
-        for (i, type) in AtomWindowType.allCases.enumerated() {
-            let error = UnsafeMutablePointer<UnsafeMutablePointer<xcb_generic_error_t>?>.allocate(capacity: 1)
-            defer {
-                error.deallocate()
-            }
-            if let reply = xcb_intern_atom_reply(xcbConn, cookies[i], error) {
-                defer {
-                    free(reply)
-                }
-                if error.pointee == nil {
-                    self.windowTypeAtoms[reply.pointee.atom] = type
-                } else {
-                    print("[ERROR] X11 error \(String(describing: error.pointee?.pointee.error_code)) when " +
-                            "trying to resolve X11 atom \(type)")
-                    free(error)
-                }
-            }
-        }
-    }
-
-    private func handleNewXWaylandSurface(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
-        wlr_xwayland_surface_ping(surface)
-        self.unmapped.insert(Surface.xwayland(surface: surface))
-        self.wlEventHandler.addXWaylandSurfaceListeners(surface: surface)
-    }
-
-    private func handleXWaylandSurfaceDestroyed(_ surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
-        self.wlEventHandler.removeXWaylandSurfaceListeners(surface: surface)
-        self.unmapped.remove(Surface.xwayland(surface: surface))
-    }
-
-    private func handleConfigureRequestX(_ event: UnsafeMutablePointer<wlr_xwayland_surface_configure_event>) {
-        // Allow configure request if it's a floating surface (so likely a menu or popup) or an unmapped surface
-        let surface = Surface.xwayland(surface: event.pointee.surface)
-        let floating = self.viewSet.floating.contains(key: surface)
-        if floating || self.unmapped.contains(surface) {
-            wlr_xwayland_surface_configure(
-                event.pointee.surface, event.pointee.x, event.pointee.y, event.pointee.width, event.pointee.height
-            )
-            if floating {
-                if let output = self.viewSet.findOutput(view: surface) {
-                    let outputLayoutBox = output.box
-                    let newBox = wlr_box(
-                            x: Int32(event.pointee.x) - outputLayoutBox.x,
-                            y: Int32(event.pointee.y) - outputLayoutBox.y,
-                            width: Int32(event.pointee.width), height: Int32(event.pointee.height))
-                    self.modifyAndUpdate {
-                        $0.replace(floating: $0.floating.updateValue(newBox, forKey: surface))
-                    }
-                }
-            }
-        }
-    }
-
-    private func handleMapX(_ xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
-        let surface = Surface.xwayland(surface: xwaylandSurface)
-        if self.unmapped.remove(surface) != nil {
-            self.manage(surface: surface)
-        }
-    }
-
-    private func handleUnmapX(_ xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
-        handleUnmap(surface: Surface.xwayland(surface: xwaylandSurface))
-    }
-
     /**
      * Called every time an output is ready to display a frame, so generally at the output's
      * refresh rate.
@@ -834,17 +744,6 @@ extension Awc {
     }
 }
 
-private func setupXWayland(
-    display: OpaquePointer,
-    compositor: UnsafeMutablePointer<wlr_compositor>,
-    wlEventHandler: WlEventHandler
-) -> UnsafeMutablePointer<wlr_xwayland> {
-    let xwayland = wlr_xwayland_create(display, compositor, true)
-    wlEventHandler.addXWaylandListeners(xwayland: xwayland!)
-    setenv("DISPLAY", xwayland!.pointee.display_name, 1)
-    return xwayland!
-}
-
 func main() {
     wlr_log_init(WLR_DEBUG, nil)
     // The Wayland display is managed by libwayland. It handles accepting clients from the Unix
@@ -941,8 +840,6 @@ func main() {
 
     wlr_gamma_control_manager_v1_create(wlDisplay)
 
-    let xwayland = setupXWayland(display: wlDisplay, compositor: compositor!, wlEventHandler: wlEventHandler)
-
     let full = Full<Surface>()
     let layout = LayerLayout(wrapped: Choose(full, TwoPane()))
     let awc = Awc(
@@ -955,12 +852,12 @@ func main() {
         cursor: cursor!,
         cursorManager: cursorManager!,
         seat: seat!,
-        xwayland: xwayland,
         layout: layout
     )
 
     setUpXdgShell(display: wlDisplay, awc: awc)
     setupLayerShell(display: wlDisplay, awc: awc)
+    setupXWayland(display: wlDisplay, compositor: compositor!, awc: awc)
 
     // Run the Wayland event loop. This does not return until you exit the
     // compositor. Starting the backend rigged up all of the necessary event

@@ -24,12 +24,4 @@ enum Event {
     case newInput(device: UnsafeMutablePointer<wlr_input_device>)
     case newOutput(output: UnsafeMutablePointer<wlr_output>)
     case outputDestroyed(output: UnsafeMutablePointer<wlr_output>)
-
-    // MARK: XWayland events
-    case xwaylandReady
-    case newXWaylandSurface(surface: UnsafeMutablePointer<wlr_xwayland_surface>)
-    case xwaylandSurfaceDestroyed(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
-    case configureRequestX(event: UnsafeMutablePointer<wlr_xwayland_surface_configure_event>)
-    case mapX(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
-    case unmapX(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
 }
