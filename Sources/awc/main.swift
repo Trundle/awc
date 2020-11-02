@@ -36,6 +36,17 @@ extension wlr_box {
 }
 
 extension UnsafeMutablePointer where Pointee == wlr_surface {
+    func popup(of parent: UnsafeMutablePointer<wlr_surface>) -> Bool {
+        if wlr_surface_is_xdg_surface(parent) {
+            return wlr_xdg_surface_from_wlr_surface(parent)!.pointee.popups.contains(
+                \wlr_xdg_popup.link,
+                where: { $0.pointee.parent == self }
+            )
+        } else {
+            return false
+        }
+    }
+
     func subsurface(of parent: UnsafeMutablePointer<wlr_surface>) -> Bool {
         parent.pointee.subsurfaces.contains(\wlr_subsurface.parent_link, where: { $0.pointee.surface == self })
     }
@@ -248,12 +259,12 @@ public class Awc<L: Layout> where L.View == Surface {
 
     private func handleKeyPress(modifiers: KeyModifiers, sym: xkb_keysym_t) -> Bool {
         // XXX This depends on my layout :( :(
-        let shiftNumbers = [
-            XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright, XKB_KEY_guillemotleft,
-            XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark, XKB_KEY_leftdoublequotemark
-        ]
-        //let shiftNumbers = [XKB_KEY_exclam, XKB_KEY_quotedbl, XKB_KEY_section, XKB_KEY_dollar, XKB_KEY_percent,
-        //                    XKB_KEY_ampersand, XKB_KEY_slash, XKB_KEY_parenleft, XKB_KEY_parenright]
+        //let shiftNumbers = [
+        //    XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright, XKB_KEY_guillemotleft,
+        //    XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark, XKB_KEY_leftdoublequotemark
+        //]
+        let shiftNumbers = [XKB_KEY_exclam, XKB_KEY_quotedbl, XKB_KEY_section, XKB_KEY_dollar, XKB_KEY_percent,
+                            XKB_KEY_ampersand, XKB_KEY_slash, XKB_KEY_parenleft, XKB_KEY_parenright]
 
         if sym == XKB_KEY_n && modifiers == [self.mod] {
             // Move focus to the next surface
@@ -416,7 +427,12 @@ extension Awc {
                 case .layer: ()
                 default:
                     let keyboardFocus = self.seat.pointee.keyboard_state.focused_surface
-                    guard surface == keyboardFocus || surface.subsurface(of: parent.wlrSurface) else {
+                    guard surface == keyboardFocus || (
+                            keyboardFocus != nil && (
+                                    surface.subsurface(of: keyboardFocus!) ||
+                                    parent.wlrSurface.popup(of: keyboardFocus!)
+                            )
+                    ) else {
                         self.modifyAndUpdate {
                             $0.focus(view: parent)
                         }
@@ -497,10 +513,13 @@ extension Awc {
     private func handleNewInput(_ device: UnsafeMutablePointer<wlr_input_device>) {
         if device.pointee.type == WLR_INPUT_DEVICE_KEYBOARD {
             let context = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
-            let keymap: OpaquePointer = "de(neo)".withCString {
-                var rules = xkb_rule_names()
-                rules.layout = $0
-                return xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS)
+            let keymap: OpaquePointer = "de,de(neo)".withCString { layoutPtr in
+                "grp:alt_space_toggle".withCString { optionsPtr in
+                    var rules = xkb_rule_names()
+                    rules.layout = layoutPtr
+                    rules.options = optionsPtr
+                    return xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS)
+                }
             }
             wlr_keyboard_set_keymap(device.pointee.keyboard, keymap)
 
@@ -660,9 +679,10 @@ extension Awc {
 
         // Find the workspace for this output
         if let output = self.viewSet.outputs().first(where: { $0.output == wlrOutput }) {
+            let focus = self.viewSet.current.workspace.stack?.focus
             for (parent, box) in output.arrangement {
                 if !parent.wantsFloating(awc: self) {
-                    let color = output.workspace.stack?.focus == .some(parent) ? activeBorderColor : inactiveBorderColor
+                    let color = focus == .some(parent) ? activeBorderColor : inactiveBorderColor
                     drawBorder(renderer: self.renderer, output: output.output, box: box, width: borderWidth, color: color)
                 }
 
@@ -855,9 +875,13 @@ func main() {
         layout: layout
     )
 
+    // Set up Shells
     setUpXdgShell(display: wlDisplay, awc: awc)
     setupLayerShell(display: wlDisplay, awc: awc)
     setupXWayland(display: wlDisplay, compositor: compositor!, awc: awc)
+
+    // Set up decorations: Wayland knows server-side and client-side decorations. We provide server-side decorations.
+    setUpDecorations(wlDisplay: wlDisplay, awc: awc)
 
     // Run the Wayland event loop. This does not return until you exit the
     // compositor. Starting the backend rigged up all of the necessary event
