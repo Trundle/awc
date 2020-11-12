@@ -82,6 +82,29 @@ struct KeyModifiers: OptionSet {
     static let mod5 = KeyModifiers(rawValue: WLR_MODIFIER_MOD5.rawValue)
 }
 
+// XXX Is there a better name for that?
+public class OutputDetails {
+    public let output: UnsafeMutablePointer<wlr_output>
+    public let outputLayout: UnsafeMutablePointer<wlr_output_layout>?
+
+    init(wlrOutput: UnsafeMutablePointer<wlr_output>,
+         outputLayout: UnsafeMutablePointer<wlr_output_layout>?
+    ) {
+        self.output = wlrOutput
+        self.outputLayout = outputLayout
+    }
+
+    var box: wlr_box {
+        get {
+            if let outputLayout = self.outputLayout {
+                return wlr_output_layout_get_box(outputLayout, self.output).pointee
+            } else {
+                return wlr_box(x: 0, y: 0, width: 1280, height: 1024)
+            }
+        }
+    }
+}
+
 public protocol ExtensionDataProvider {
     func getExtensionData<D>() -> D?
 }
@@ -91,7 +114,7 @@ let borderWidth: Int32 = 2
 let activeBorderColor = float_rgba(r: 0.89, g: 0.773, b: 0.596, a: 1.0)
 let inactiveBorderColor = float_rgba(r: 0.541, g: 0.431, b: 0.392, a: 1.0)
 
-public class Awc<L: Layout> where L.View == Surface {
+public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetails {
     private struct ListenerKey: Hashable {
         let emitter: UnsafeMutableRawPointer
         let type: ObjectIdentifier
@@ -132,12 +155,12 @@ public class Awc<L: Layout> where L.View == Surface {
         seat: UnsafeMutablePointer<wlr_seat>,
         layout: L
     ) {
-        let workspace: Workspace<L, Surface> = Workspace(
+        let workspace: Workspace<L> = Workspace(
             tag: "1",
             layout: layout
         )
-        let output = Output(wlrOutput: noOpOutput, outputLayout: nil, workspace: workspace)
-        var otherWorkspaces: [Workspace<L, Surface>] = []
+        let output = Output(data: OutputDetails(wlrOutput: noOpOutput, outputLayout: nil), workspace: workspace)
+        var otherWorkspaces: [Workspace<L>] = []
         for i in 2...9 {
             otherWorkspaces.append(Workspace(tag: "\(i)", layout: layout))
         }
@@ -229,7 +252,7 @@ public class Awc<L: Layout> where L.View == Surface {
     private func viewAt(x: Double, y: Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
     {
         for output in self.viewSet.outputs() {
-            let outputLayoutBox = output.box
+            let outputLayoutBox = output.data.box
             let outputX = x - Double(outputLayoutBox.x)
             let outputY = y - Double(outputLayoutBox.y)
             for (view, box) in output.arrangement.reversed() {
@@ -344,7 +367,7 @@ public class Awc<L: Layout> where L.View == Surface {
             let layout =  self.viewSet.current.workspace.layout
             let nextLayout = layout.nextLayout() ?? layout.firstLayout()
             self.modifyAndUpdate {
-                $0.replace(current: $0.current.replace(workspace: $0.current.workspace.replace(layout: nextLayout)))
+                $0.replace(current: $0.current.copy(workspace: $0.current.workspace.replace(layout: nextLayout)))
             }
             return true
         } else if sym == XKB_KEY_t && modifiers == [self.mod] {
@@ -371,7 +394,9 @@ public class Awc<L: Layout> where L.View == Surface {
     func shouldFloat(surface: Surface) -> Bool {
         // XXX This should come from some configuration file
         if case .xdg(let xdgSurface) = surface {
-            if xdgSurface.pointee.role == WLR_XDG_SURFACE_ROLE_TOPLEVEL {
+            if xdgSurface.pointee.role == WLR_XDG_SURFACE_ROLE_TOPLEVEL &&
+                       xdgSurface.pointee.toplevel.pointee.app_id != nil
+            {
                 let appId = String(cString: xdgSurface.pointee.toplevel.pointee.app_id)
                 return appId == "whisker-menu"
             }
@@ -588,15 +613,19 @@ extension Awc {
         }
 
         self.modifyAndUpdate {
-            if $0.current.output == self.noOpOutput {
+            if $0.current.data.output == self.noOpOutput {
                 let newOutput = Output(
-                    wlrOutput: wlrOutput, outputLayout: self.outputLayout, workspace: $0.current.workspace
+                    data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout),
+                    workspace: $0.current.workspace
                 )
                 return $0.replace(current: newOutput)
             } else {
                 var hidden = Array(self.viewSet.hidden)
                 if let workspace = hidden.popLast() {
-                    let newOutput = Output(wlrOutput: wlrOutput, outputLayout: self.outputLayout, workspace: workspace)
+                    let newOutput = Output(
+                        data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout),
+                        workspace: workspace
+                    )
                     return $0.replace(
                             current: newOutput,
                             visible: Array(self.viewSet.visible) + [self.viewSet.current],
@@ -620,7 +649,7 @@ extension Awc {
         self.wlEventHandler.removeOutputListeners(output: wlrOutput)
 
         self.modifyAndUpdate {
-            if $0.current.output == wlrOutput {
+            if $0.current.data.output == wlrOutput {
                 if let newCurrent = $0.visible.first {
                     return $0.replace(
                             current: newCurrent,
@@ -630,11 +659,12 @@ extension Awc {
                 } else {
                     // This was the last output, migrate to no-op output
                     let newCurrent = Output(
-                        wlrOutput: self.noOpOutput, outputLayout: nil, workspace: $0.current.workspace
+                        data: OutputDetails(wlrOutput: self.noOpOutput, outputLayout: nil),
+                        workspace: $0.current.workspace
                     )
                     return $0.replace(current: newCurrent)
                 }
-            } else if let output = $0.visible.first(where: { $0.output == wlrOutput }) {
+            } else if let output = $0.visible.first(where: { $0.data.output == wlrOutput }) {
                 return $0.replace(
                         current: $0.current,
                         visible: $0.visible.filter({ $0 !== output }),
@@ -678,12 +708,14 @@ extension Awc {
         color.withPtr { wlr_renderer_clear(self.renderer, $0) }
 
         // Find the workspace for this output
-        if let output = self.viewSet.outputs().first(where: { $0.output == wlrOutput }) {
+        if let output = self.viewSet.outputs().first(where: { $0.data.output == wlrOutput }) {
             let focus = self.viewSet.current.workspace.stack?.focus
             for (parent, box) in output.arrangement {
                 if !parent.wantsFloating(awc: self) {
                     let color = focus == .some(parent) ? activeBorderColor : inactiveBorderColor
-                    drawBorder(renderer: self.renderer, output: output.output, box: box, width: borderWidth, color: color)
+                    drawBorder(
+                        renderer: self.renderer, output: output.data.output, box: box, width: borderWidth, color: color
+                    )
                 }
 
                 withUnsafePointer(to: now) {
@@ -860,7 +892,7 @@ func main() {
 
     wlr_gamma_control_manager_v1_create(wlDisplay)
 
-    let full = Full<Surface>()
+    let full = Full<Surface, OutputDetails>()
     let layout = LayerLayout(wrapped: full ||| TwoPane() ||| Rotated(layout: TwoPane()))
     let awc = Awc(
         wlEventHandler: wlEventHandler,

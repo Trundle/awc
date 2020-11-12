@@ -37,15 +37,19 @@ extension Surface {
         }
     }
 
-    func preferredFloatingBox<L: Layout>(awc: Awc<L>, output: Output<L, Surface>) -> wlr_box where L.View == Surface {
+    func preferredFloatingBox<L: Layout>(
+        awc: Awc<L>,
+        output: Output<L>
+    ) -> wlr_box where L.View == Surface, L.OutputData == OutputDetails {
         switch self {
         case .layer: /* XXX */ return wlr_box()
         case .xdg(let surface):
             let box = UnsafeMutableBufferPointer<wlr_box>.allocate(capacity: 1)
+            defer { box.deallocate() }
             wlr_xdg_surface_get_geometry(surface, box.baseAddress!)
             return box[0]
         case .xwayland(let surface):
-            let outputBox = output.box
+            let outputBox = output.data.box
             return wlr_box(x: Int32(surface.pointee.x) - outputBox.x,
                     y: Int32(surface.pointee.y) - outputBox.y,
                     width: Int32(surface.pointee.width), height: Int32(surface.pointee.height))

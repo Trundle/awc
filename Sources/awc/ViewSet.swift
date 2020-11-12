@@ -1,60 +1,50 @@
 import Libawc
 import Wlroots
 
-public class Output<L: Layout, View> where L.View == View {
-    public let output: UnsafeMutablePointer<wlr_output>
-    public let outputLayout: UnsafeMutablePointer<wlr_output_layout>?
-    public let workspace: Workspace<L, View>
+public class Output<L: Layout> {
+    public let workspace: Workspace<L>
+    public let data: L.OutputData
     // The current surface arrangement
-    public var arrangement: [(View, wlr_box)] = []
+    public var arrangement: [(L.View, wlr_box)] = []
 
-    init(wlrOutput: UnsafeMutablePointer<wlr_output>,
-         outputLayout: UnsafeMutablePointer<wlr_output_layout>?,
-         workspace: Workspace<L, View>
+    init(data: L.OutputData,
+         workspace: Workspace<L>
     ) {
-        self.output = wlrOutput
-        self.outputLayout = outputLayout
+        self.data = data
         self.workspace = workspace
     }
 
-    public func replace(workspace: Workspace<L, View>) -> Output<L, View> {
-        Output(wlrOutput: self.output, outputLayout: self.outputLayout, workspace: workspace)
-    }
-
-    var box: wlr_box {
-        get {
-            if let outputLayout = self.outputLayout {
-                return wlr_output_layout_get_box(outputLayout, self.output).pointee
-            } else {
-                return wlr_box(x: 0, y: 0, width: 1280, height: 1024)
-            }
-        }
+    /**
+     * Returns a new `Output` instance, with the `workspace` property set to the given value.
+     */
+    public func copy(workspace: Workspace<L>) -> Output<L> {
+        Output(data: self.data, workspace: workspace)
     }
 }
 
 extension Output: CustomStringConvertible {
     public var description: String {
-        "Output { output = \(self.output), workspace = \(self.workspace) }"
+        "Output { details = \(self.data), workspace = \(self.workspace) }"
     }
 }
 
 
-public class Workspace<L: Layout, View> where L.View == View {
+public class Workspace<L: Layout> {
     public let tag: String
     public let layout: L
-    public let stack: Stack<View>?
+    public let stack: Stack<L.View>?
 
-    init(tag: String, layout: L, stack: Stack<View>? = nil) {
+    init(tag: String, layout: L, stack: Stack<L.View>? = nil) {
         self.tag = tag
         self.layout = layout
         self.stack = stack
     }
 
-    public func replace(layout: L) -> Workspace<L, View> {
+    public func replace(layout: L) -> Workspace<L> {
         Workspace(tag: self.tag, layout: layout, stack: self.stack)
     }
 
-    public func replace(stack: Stack<View>?) -> Workspace<L, View> {
+    public func replace(stack: Stack<L.View>?) -> Workspace<L> {
         Workspace(tag: self.tag, layout: self.layout, stack: stack)
     }
 }
@@ -72,22 +62,30 @@ extension Workspace: CustomStringConvertible {
 }
 
 
+// Note that the `View` parameter is superfluous, it could also be expressed with a constraint such as
+// "where L.View: Hashable", but unfortunately, that makes swift crash with an assertion error:
+// swift::CanType (anonymous namespace)::SubstFunctionTypeCollector::getSubstitutedInterfaceType(
+// swift::Lowering::AbstractionPattern, swift::CanType): Assertion `result && "substType was not
+// bindable to abstraction pattern type?"' failed.
+/// See https://bugs.swift.org/browse/SR-13849
 public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     // The output with the currently focused workspace
-    public let current: Output<L, View>
+    public let current: Output<L>
     // Non-focused workspaces visible on outputs
-    public let visible: [Output<L, View>]
+    public let visible: [Output<L>]
     // The workspaces that are not visible anywhere
-    public let hidden: [Workspace<L, View>]
+    public let hidden: [Workspace<L>]
     // Mapping of untiled views to their boxes (location + size)
-    public let floating: Map<View, wlr_box>
+    public let floating: Map<L.View, wlr_box>
 
-    convenience init(current: Output<L, View>, hidden: [Workspace<L, View>] = []) {
+    convenience init(current: Output<L>, hidden: [Workspace<L>] = []) {
         self.init(current: current, visible: [], hidden: hidden, floating: [:])
     }
 
-    private init(current: Output<L, View>, visible: [Output<L, View>], hidden: [Workspace<L, View>],
-                 floating: Map<View, wlr_box>) {
+    private init(current: Output<L>,
+                 visible: [Output<L>],
+                 hidden: [Workspace<L>],
+                 floating: Map<L.View, wlr_box>) {
         self.current = current
         self.visible = visible
         self.hidden = hidden
@@ -96,33 +94,33 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
 
     // MARK: Convenience methods for updating state
 
-    func replace(current: Output<L, View>) -> ViewSet<L, View> {
+    func replace(current: Output<L>) -> ViewSet<L, View> {
         ViewSet(current: current, visible: self.visible, hidden: self.hidden, floating: self.floating)
     }
 
-    func replace(floating: Map<View, wlr_box>) -> ViewSet<L, View> {
+    func replace(floating: Map<L.View, wlr_box>) -> ViewSet<L, View> {
         ViewSet(current: self.current, visible: self.visible, hidden: self.hidden, floating: floating)
     }
 
     func replace(
-        current: Output<L, View>,
-        visible: [Output<L, View>],
-        hidden: [Workspace<L, View>]
+        current: Output<L>,
+        visible: [Output<L>],
+        hidden: [Workspace<L>]
     ) -> ViewSet<L, View> {
         ViewSet(current: current, visible: visible, hidden: hidden, floating: self.floating)
     }
 
-    func modify(_ f: (Stack<View>) -> Stack<View>?) -> ViewSet<L, View> {
+    func modify(_ f: (Stack<L.View>) -> Stack<L.View>?) -> ViewSet<L, View> {
         if let stack = self.current.workspace.stack {
             return self.replace(
-                current: self.current.replace(workspace: self.current.workspace.replace(stack: f(stack))))
+                current: self.current.copy(workspace: self.current.workspace.replace(stack: f(stack))))
         }
         return self
     }
 
-    func modifyOr(default: @autoclosure () -> Stack<View>?, _ f: (Stack<View>) -> Stack<View>?) -> ViewSet<L, View> {
+    func modifyOr(default: @autoclosure () -> Stack<L.View>?, _ f: (Stack<L.View>) -> Stack<L.View>?) -> ViewSet<L, View> {
         let withNewStack = { newStack in
-            self.replace(current: self.current.replace(workspace: self.current.workspace.replace(stack: newStack)))
+            self.replace(current: self.current.copy(workspace: self.current.workspace.replace(stack: newStack)))
         }
         if let stack = self.current.workspace.stack {
             return withNewStack(f(stack))
@@ -132,7 +130,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Finds the output that displays the given view.
-    func findOutput(view: View) -> Output<L, View>? {
+    func findOutput(view: L.View) -> Output<L>? {
         for output in self.outputs() {
             if let stack = output.workspace.stack {
                 if stack.contains(view) {
@@ -144,17 +142,17 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Finds the workspace that displays the given view.
-    func findWorkspace(view: View) -> Workspace<L, View>? {
+    func findWorkspace(view: L.View) -> Workspace<L>? {
         self.workspaces().first(where: { $0.stack?.contains(view) == true })
     }
 
     /// Removes the given view, if it exists.
-    func remove(view: View) -> ViewSet<L, View> {
-        let removeFromWorkspace: (Workspace<L, View>) -> Workspace<L, View> = {
+    func remove(view: L.View) -> ViewSet<L, View> {
+        let removeFromWorkspace: (Workspace<L>) -> Workspace<L> = {
             $0.replace(stack: $0.stack?.remove(view))
         }
-        let removeFromOutput: (Output<L, View>) -> Output<L, View> = {
-            $0.replace(workspace: removeFromWorkspace($0.workspace))
+        let removeFromOutput: (Output<L>) -> Output<L> = {
+            $0.copy(workspace: removeFromWorkspace($0.workspace))
         }
         return self.sink(view: view)
             .replace(
@@ -166,12 +164,12 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
 
     // MARK: Floating views
 
-    func float(view: View, box: wlr_box) -> ViewSet<L, View> {
+    func float(view: L.View, box: wlr_box) -> ViewSet<L, View> {
         self.replace(floating: self.floating.updateValue(box, forKey: view))
     }
 
     /// Clears the view's floating status.
-    func sink(view: View) -> ViewSet<L, View> {
+    func sink(view: L.View) -> ViewSet<L, View> {
         self.replace(floating: self.floating.removeValue(forKey: view))
     }
 
@@ -182,7 +180,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
         f(self.view(tag: tag)).view(tag: self.current.workspace.tag)
     }
 
-    func focus(view: View) -> ViewSet<L, View> {
+    func focus(view: L.View) -> ViewSet<L, View> {
         guard self.peek() != view else {
             return self
         }
@@ -195,7 +193,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Returns the focused element of the current stack (if there is one).
-    func peek() -> View? {
+    func peek() -> L.View? {
         self.current.workspace.stack?.focus
     }
 
@@ -226,7 +224,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
                 hidden: self.hidden)
         } else if let workspace = self.hidden.first(where: { $0.tag == tag }) {
             return self.replace(
-                current: self.current.replace(workspace: workspace),
+                current: self.current.copy(workspace: workspace),
                 visible: self.visible,
                 hidden: self.hidden.filter { $0 !== workspace } + [self.current.workspace])
         } else {
@@ -236,23 +234,23 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Returns an array of all workspaces contained in this view set.
-    func workspaces() -> [Workspace<L, View>] {
+    func workspaces() -> [Workspace<L>] {
         [self.current.workspace] + self.visible.map { $0.workspace } + self.hidden
     }
 
-    func outputs() -> ViewSetOutputIterator<L, View> {
+    func outputs() -> ViewSetOutputIterator<L> {
         ViewSetOutputIterator(self)
     }
 
-    public struct ViewSetOutputIterator<L: Layout, View: Hashable>: Sequence, IteratorProtocol where L.View == View {
-        private let viewSet: ViewSet<L, View>
-        private var visible: IndexingIterator<Array<Output<L, View>>>? = nil
+    public struct ViewSetOutputIterator<L: Layout>: Sequence, IteratorProtocol where L.View: Hashable {
+        private let viewSet: ViewSet<L, L.View>
+        private var visible: IndexingIterator<Array<Output<L>>>? = nil
 
-        internal init(_ viewSet: ViewSet<L, View>) {
+        internal init(_ viewSet: ViewSet<L, L.View>) {
             self.viewSet = viewSet
         }
 
-        public mutating func next() -> Output<L, View>? {
+        public mutating func next() -> Output<L>? {
             if self.visible != nil {
                 return self.visible?.next()
             } else {
@@ -261,7 +259,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
             }
         }
 
-        public func makeIterator() -> ViewSetOutputIterator<L, View> {
+        public func makeIterator() -> ViewSetOutputIterator<L> {
             self
         }
     }

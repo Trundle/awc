@@ -76,7 +76,7 @@ extension Awc {
     func updateLayout() {
         for output in self.viewSet.outputs() {
             // XXX encapsulate?
-            var outputLayoutBox = output.box
+            var outputLayoutBox = output.data.box
             outputLayoutBox.x += borderWidth
             outputLayoutBox.y += borderWidth
             outputLayoutBox.width -= 2 * borderWidth
@@ -128,7 +128,7 @@ extension Awc {
     }
 
     /// Returns an array of all outputs, where the first element is the left-most output.
-    func orderedOutputs() -> [Output<L, Surface>] {
-        self.viewSet.outputs().sorted(by: { $0.box.x <= $1.box.x })
+    func orderedOutputs() -> [Output<L>] {
+        self.viewSet.outputs().sorted(by: { $0.data.box.x <= $1.data.box.x })
     }
 }

@@ -162,7 +162,7 @@ extension Awc: XWaylandSurface {
             )
             if floating {
                 if let output = self.viewSet.findOutput(view: surface) {
-                    let outputLayoutBox = output.box
+                    let outputLayoutBox = output.data.box
                     let newBox = wlr_box(
                         x: Int32(event.pointee.x) - outputLayoutBox.x,
                         y: Int32(event.pointee.y) - outputLayoutBox.y,

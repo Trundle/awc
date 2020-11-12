@@ -34,25 +34,25 @@ extension Awc: LayerShell {
         }
 
         if layerSurface.pointee.output == nil {
-            layerSurface.pointee.output = self.viewSet.current.output
+            layerSurface.pointee.output = self.viewSet.current.data.output
         }
 
-        if let output = self.viewSet.outputs().first(where: { $0.output == layerSurface.pointee.output } ) {
-            let layers = layerShellData.layers[output.output, default: createLayers()]
-            layerShellData.layers[output.output] = layers
+        if let output = self.viewSet.outputs().first(where: { $0.data.output == layerSurface.pointee.output } ) {
+            let layers = layerShellData.layers[output.data.output, default: createLayers()]
+            layerShellData.layers[output.data.output] = layers
             guard let layerData = layers[layerSurface.pointee.current.layer] else {
                 return
             }
             layerShellData.outputDestroyListeners[layerSurface] =
                 OutputDestroyListener.newFor(
-                    emitter: output.output,
+                    emitter: output.data.output,
                     handler: LayerShellOutputDestroyedHandler(awc: self, surface: layerSurface)
                 )
             self.addListener(layerSurface, LayerSurfaceListener.newFor(emitter: layerSurface, handler: self))
 
             layerData.unmapped.insert(layerSurface)
-            let usableBox = self.arrangeLayers(wlrOutput: output.output, layers: layers)
-            layerShellData.usableBoxes[output.output] = usableBox
+            let usableBox = self.arrangeLayers(wlrOutput: output.data.output, layers: layers)
+            layerShellData.usableBoxes[output.data.output] = usableBox
         } else {
             wlr_layer_surface_v1_close(layerSurface)
         }
@@ -65,7 +65,7 @@ extension Awc: LayerShell {
             layerData.unmapped.remove(layerSurface)
 
             if let listenerPtr = layerShellData.outputDestroyListeners.removeValue(forKey: layerSurface) {
-                if self.viewSet.outputs().contains(where: { $0.output == layerSurface.pointee.output }) {
+                if self.viewSet.outputs().contains(where: { $0.data.output == layerSurface.pointee.output }) {
                     listenerPtr.pointee.deregister()
 
                     guard let layers = layerShellData.layers[layerSurface.pointee.output] else {
@@ -305,7 +305,9 @@ private func createLayers() -> [zwlr_layer_shell_v1_layer: LayerData] {
 }
 
 /// Reacts to "output destroyed" events and updates layers (closes surfaces and so on)
-private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandler where L.View == Surface {
+private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandler
+    where L.View == Surface, L.OutputData == OutputDetails
+{
     private unowned let awc: Awc<L>
     private let surface: UnsafeMutablePointer<wlr_layer_surface_v1>
 
@@ -413,7 +415,12 @@ private struct LayerSurfaceListener: PListener {
 }
 
 /// Layout that wraps around another layout and adds all layout shell surfaces.
-final class LayerLayout<WrappedLayout: Layout>: Layout where WrappedLayout.View == Surface {
+final class LayerLayout<WrappedLayout: Layout>: Layout
+    where WrappedLayout.View == Surface, WrappedLayout.OutputData == OutputDetails
+{
+    public typealias View = WrappedLayout.View
+    public typealias OutputData = WrappedLayout.OutputData
+
     fileprivate let data: LayerShellData
     private let wrapped: WrappedLayout
 
@@ -429,10 +436,10 @@ final class LayerLayout<WrappedLayout: Layout>: Layout where WrappedLayout.View 
 
     public func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, Surface>,
+        output: Output<L>,
         stack: Stack<Surface>,
         box: wlr_box
-    ) -> [(Surface, wlr_box)] where L.View == Surface {
+    ) -> [(Surface, wlr_box)] where L.View == Surface, L.OutputData == OutputDetails {
         guard let data: LayerShellData = dataProvider.getExtensionData() else {
             return wrapped.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
         }
@@ -443,7 +450,7 @@ final class LayerLayout<WrappedLayout: Layout>: Layout where WrappedLayout.View 
             addTo(arrangement: &arrangement, output: output, layer: layer, layerShellData: data)
         }
 
-        let usableBox = data.usableBoxes[output.output] ?? box
+        let usableBox = data.usableBoxes[output.data.output] ?? box
         arrangement += wrapped.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: usableBox)
 
         for layer in layerShellLayers[(layerShellLayers.count / 2)...] {
@@ -455,9 +462,9 @@ final class LayerLayout<WrappedLayout: Layout>: Layout where WrappedLayout.View 
 
     public func emptyLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, Surface>,
+        output: Output<L>,
         box: wlr_box
-    ) -> [(Surface, wlr_box)] where L.View == Surface {
+    ) -> [(Surface, wlr_box)] where L.View == Surface, L.OutputData == OutputDetails {
         var arrangement: [(Surface, wlr_box)] = []
 
         if let data: LayerShellData = dataProvider.getExtensionData() {
@@ -483,11 +490,11 @@ final class LayerLayout<WrappedLayout: Layout>: Layout where WrappedLayout.View 
 
     private func addTo<L: Layout>(
         arrangement: inout [(Surface, wlr_box)],
-        output: Output<L, Surface>,
+        output: Output<L>,
         layer: zwlr_layer_shell_v1_layer,
         layerShellData: LayerShellData
-    ) {
-        if let layer = layerShellData.layers[output.output]?[layer] {
+    ) where L.OutputData == OutputDetails {
+        if let layer = layerShellData.layers[output.data.output]?[layer] {
             for (layerSurface, box) in layer.boxes {
                 if layer.mapped.contains(layerSurface) {
                     arrangement.append((Surface.layer(surface: layerSurface), box))

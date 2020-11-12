@@ -3,21 +3,23 @@ import Wlroots
 
 public protocol Layout {
     associatedtype View
+    /// Type that is used by `Output`s to manage their state.
+    associatedtype OutputData
 
     /// Called when there are no views.
     func emptyLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, View>,
+        output: Output<L>,
         box: wlr_box
-    ) -> [(View, wlr_box)] where View == L.View
+    ) -> [(L.View, wlr_box)] where L.View == View, L.OutputData == OutputData
 
     /// Arrange the list of given views.
     func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, View>,
-        stack: Stack<View>,
+        output: Output<L>,
+        stack: Stack<L.View>,
         box: wlr_box
-    ) -> [(View, wlr_box)] where View == L.View
+    ) -> [(L.View, wlr_box)] where L.View == View, L.OutputData == OutputData
 
     func firstLayout() -> Self
     func nextLayout() -> Self?
@@ -27,14 +29,14 @@ public protocol Layout {
 extension Layout {
     public func emptyLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, View>,
+        output: Output<L>,
         box: wlr_box
-    ) -> [(View, wlr_box)] where View == L.View {
+    ) -> [(L.View, wlr_box)] {
         []
     }
 
     public func firstLayout() -> Self {
-        return self
+        self
     }
 
     public func nextLayout() -> Self? {
@@ -42,14 +44,14 @@ extension Layout {
     }
 }
 
-// /// The simplest of all layouts: renders the focused surface fullscreen.
-public class Full<View> : Layout {
+/// The simplest of all layouts: renders the focused surface fullscreen.
+public class Full<View, OutputData> : Layout {
     public func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, View>,
-        stack: Stack<View>,
+        output: Output<L>,
+        stack: Stack<L.View>,
         box: wlr_box
-    ) -> [(View, wlr_box)] where View == L.View {
+    ) -> [(L.View, wlr_box)] where L.View == View {
         [(stack.focus, box)]
     }
 }
@@ -57,12 +59,12 @@ public class Full<View> : Layout {
 /// A layout that splits the screen horizontally and shows two windows. The left window is always
 /// the main window, and the right is either the currently focused window or the second window in
 /// layout order.
-public class TwoPane<View>: Layout {
+public class TwoPane<View, OutputData>: Layout {
     private let split = 0.5
 
     public func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, View>,
+        output: Output<L>,
         stack: Stack<View>,
         box: wlr_box
     ) -> [(View, wlr_box)] where L.View == View {
@@ -78,7 +80,12 @@ public class TwoPane<View>: Layout {
     }
 }
 
-public final class Choose<Left: Layout, Right: Layout>: Layout where Left.View == Right.View {
+public final class Choose<Left: Layout, Right: Layout>: Layout
+    where Left.View == Right.View, Left.OutputData == Right.OutputData
+{
+    public typealias View = Left.View
+    public typealias OutputData = Left.OutputData
+
     private enum Branch {
         case left
         case right
@@ -104,7 +111,7 @@ public final class Choose<Left: Layout, Right: Layout>: Layout where Left.View =
 
     public func emptyLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, Left.View>,
+        output: Output<L>,
         box: wlr_box
     ) -> [(Left.View, wlr_box)] where L.View == Left.View {
         switch self.current {
@@ -115,10 +122,10 @@ public final class Choose<Left: Layout, Right: Layout>: Layout where Left.View =
 
     public func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<L, Left.View>,
+        output: Output<L>,
         stack: Stack<Left.View>,
         box: wlr_box
-    ) -> [(Left.View, wlr_box)] where L.View == Left.View {
+    ) -> [(Left.View, wlr_box)] where L.View == Left.View, L.OutputData == Left.OutputData {
         switch self.current {
         case .left: return self.left.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
         case .right: return self.right.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
@@ -126,7 +133,7 @@ public final class Choose<Left: Layout, Right: Layout>: Layout where Left.View =
     }
 
     public func firstLayout() -> Choose<Left, Right> {
-        return Choose(left: self.start.0, right: self.start.1, current: .left, start: self.start)
+        Choose(left: self.start.0, right: self.start.1, current: .left, start: self.start)
     }
 
     public func nextLayout() -> Choose<Left, Right>? {
@@ -155,6 +162,9 @@ func |||<L: Layout, R: Layout>(left: L, right: R) -> Choose<L, R> where L.View =
 
 /// Rotates another layout by 90 degrees.
 public final class Rotated<L: Layout>: Layout {
+    public typealias View = L.View
+    public typealias OutputData = L.OutputData
+
     private let layout: L
 
     init(layout: L) {
@@ -163,9 +173,9 @@ public final class Rotated<L: Layout>: Layout {
 
     public func emptyLayout<M: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<M, L.View>,
+        output: Output<M>,
         box: wlr_box
-    ) -> [(L.View, wlr_box)] where M.View == L.View {
+    ) -> [(L.View, wlr_box)] where M.View == L.View, M.OutputData == L.OutputData {
         self.layout
             .emptyLayout(dataProvider: dataProvider, output: output, box: box.rotated())
             .map { (view, viewBox) in (view, viewBox.rotated()) }
@@ -173,10 +183,10 @@ public final class Rotated<L: Layout>: Layout {
 
     public func doLayout<M: Layout>(
         dataProvider: ExtensionDataProvider,
-        output: Output<M, L.View>,
+        output: Output<M>,
         stack: Stack<L.View>,
         box: wlr_box
-    ) -> [(L.View, wlr_box)] where M.View == L.View {
+    ) -> [(L.View, wlr_box)] where M.View == L.View, M.OutputData == L.OutputData {
         self.layout
             .doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box.rotated())
             .map { (view, viewBox) in (view, viewBox.rotated()) }
