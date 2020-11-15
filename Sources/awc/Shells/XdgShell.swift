@@ -11,7 +11,22 @@ protocol XdgSurface: class {
 }
 
 protocol XdgMappedSurface: class {
+    func commit(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     func newPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>)
+    func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>)
+}
+
+protocol XdgPopup: class {
+    func commit(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
+    func destroy(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
+    func map(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
+    func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>)
+    func unmap(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
+}
+
+protocol Subsurface: class {
+    func commit(subsurface: UnsafeMutablePointer<wlr_subsurface>)
+    func destroy(subsurface: UnsafeMutablePointer<wlr_subsurface>)
 }
 
 /// Signal listeners for XDG Shell.
@@ -61,16 +76,131 @@ struct XdgSurfaceListener: PListener {
 /// Signal listeners for a mapped XDG surface.
 struct XdgMappedSurfaceListener: PListener {
     weak var handler: XdgMappedSurface?
+    private var commit: wl_listener = wl_listener()
     private var newPopup: wl_listener = wl_listener()
+    private var newSubsurface: wl_listener = wl_listener()
 
     mutating func listen(to surface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        Self.add(signal: &surface.pointee.surface.pointee.events.commit, listener: &self.commit) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.commit,
+                { (handler, surface: UnsafeMutablePointer<wlr_surface>) in
+                    if let xdgSurface = wlr_xdg_surface_from_wlr_surface(surface) {
+                        handler.commit(xdgSurface: xdgSurface)
+                    }
+                }
+            )
+        }
+
         Self.add(signal: &surface.pointee.events.new_popup, listener: &self.newPopup) { (listener, data) in
             Self.handle(from: listener!, data: data!, \Self.newPopup, { $0.newPopup(popup: $1) })
+        }
+
+        Self.add(signal: &surface.pointee.surface.pointee.events.new_subsurface, listener: &self.newSubsurface) {
+            (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.newSubsurface, { $0.newSubsurface(subsurface: $1) })
         }
     }
 
     mutating func deregister() {
+        wl_list_remove(&self.commit.link)
         wl_list_remove(&self.newPopup.link)
+        wl_list_remove(&self.newSubsurface.link)
+    }
+}
+
+struct XdgPopupListener: PListener {
+    weak var handler: XdgPopup?
+    private var commit: wl_listener = wl_listener()
+    private var destroy: wl_listener = wl_listener()
+    private var map: wl_listener = wl_listener()
+    private var newSubsurface: wl_listener = wl_listener()
+    private var unmap: wl_listener = wl_listener()
+
+    mutating func listen(to popup: UnsafeMutablePointer<wlr_xdg_popup>) {
+        Self.add(signal: &popup.pointee.base.pointee.surface.pointee.events.commit, listener: &self.commit) {
+            (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.commit,
+                { (handler, surface: UnsafeMutablePointer<wlr_surface>) in
+                    if let xdgSurface = wlr_xdg_surface_from_wlr_surface(surface) {
+                        handler.commit(popupSurface: xdgSurface)
+                    }
+                }
+            )
+        }
+
+        Self.add(signal: &popup.pointee.base.pointee.events.destroy, listener: &self.destroy) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.destroy, { $0.destroy(popupSurface: $1) })
+        }
+
+        Self.add(signal: &popup.pointee.base.pointee.events.map, listener: &self.map) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.map, { $0.map(popupSurface: $1) })
+        }
+
+        Self.add(signal: &popup.pointee.base.pointee.surface.pointee.events.new_subsurface, listener: &self.newSubsurface) {
+            (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.newSubsurface, { $0.newSubsurface(subsurface: $1) })
+        }
+
+        Self.add(signal: &popup.pointee.base.pointee.events.unmap, listener: &self.unmap) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.unmap, { $0.unmap(popupSurface: $1) })
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.commit.link)
+        wl_list_remove(&self.destroy.link)
+        wl_list_remove(&self.map.link)
+        wl_list_remove(&self.newSubsurface.link)
+        wl_list_remove(&self.unmap.link)
+    }
+}
+
+struct SubsurfaceListener: PListener {
+    weak var handler: Subsurface?
+    private var commit: wl_listener = wl_listener()
+    private var destroy: wl_listener = wl_listener()
+
+    mutating func listen(to subsurface: UnsafeMutablePointer<wlr_subsurface>) {
+        Self.add(signal: &subsurface.pointee.surface.pointee.events.commit, listener: &self.commit) {
+            (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.commit,
+                { (handler, surface: UnsafeMutablePointer<wlr_surface>) in
+                    if let subsurface = wlr_subsurface_from_wlr_surface(surface) {
+                        handler.commit(subsurface: subsurface)
+                    }
+                }
+            )
+        }
+
+        Self.add(signal: &subsurface.pointee.events.destroy, listener: &self.destroy) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.destroy, { $0.destroy(subsurface: $1) })
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.commit.link)
+        wl_list_remove(&self.destroy.link)
+    }
+}
+
+extension Awc {
+    fileprivate func damageWlrSurface(parent: Surface, wlrSurface: UnsafeMutablePointer<wlr_surface>, sx: Int32, sy: Int32) {
+        guard let output = self.viewSet.findOutput(view: parent) else {
+            return
+        }
+        guard let box = output.arrangement.first(where: { $0.0 == parent})?.1 else {
+            return
+        }
+
+        var damage = pixman_region32_t()
+        pixman_region32_init(&damage)
+        defer {
+            pixman_region32_fini(&damage)
+        }
+
+        wlr_surface_get_effective_damage(wlrSurface, &damage)
+        pixman_region32_translate(&damage, box.x + sx, box.y + sy)
+        wlr_output_damage_add(output.data.damage, &damage)
     }
 }
 
@@ -110,9 +240,88 @@ extension Awc: XdgSurface {
 }
 
 extension Awc: XdgMappedSurface {
+    internal func commit(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        let surface = Surface.xdg(surface: xdgSurface)
+        self.damageWlrSurface(parent: surface, wlrSurface: surface.wlrSurface, sx: 0, sy: 0)
+    }
+
     func newPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>) {
-        // XXX
-        print("[DEBUG] New popup, but popups not implemented yet!")
+        self.addListener(popup.pointee.base, XdgPopupListener.newFor(emitter: popup, handler: self))
+    }
+
+    func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>) {
+        self.addListener(subsurface, SubsurfaceListener.newFor(emitter: subsurface, handler: self))
+    }
+}
+
+extension Awc: XdgPopup {
+    internal func commit(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        if let popup = popupSurface.pointee.popup,
+           let parentSurface = popup.pointee.parent,
+           let parentXdgSurface = wlr_xdg_surface_from_wlr_surface(parentSurface)
+        {
+            let parentSurface = Surface.xdg(surface: parentXdgSurface)
+            self.damageWlrSurface(
+                parent: parentSurface,
+                wlrSurface: popupSurface.pointee.surface,
+                sx: popup.pointee.geometry.x,
+                sy: popup.pointee.geometry.y
+            )
+        }
+    }
+
+    internal func destroy(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        self.removeListener(popupSurface, XdgPopupListener.self)
+    }
+
+    internal func map(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        self.damageWholePopup(popupSurface: popupSurface)
+    }
+
+    internal func unmap(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        self.damageWholePopup(popupSurface: popupSurface)
+    }
+
+    private func damageWholePopup(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        if let popup = popupSurface.pointee.popup,
+           let parentSurface = popup.pointee.parent,
+           let parentXdgSurface = wlr_xdg_surface_from_wlr_surface(parentSurface)
+        {
+            let surface = Surface.xdg(surface: parentXdgSurface)
+            if let output = self.viewSet.findOutput(view: surface),
+               let outputBox = output.arrangement.first(where: { $0.0 == surface})?.1
+            {
+                var box = popup.pointee.geometry
+                box.x += outputBox.x
+                box.y += outputBox.y
+                wlr_output_damage_add_box(output.data.damage, &box)
+            }
+        }
+    }
+}
+
+extension UnsafeMutablePointer where Pointee == wlr_subsurface {
+    func parentToplevel() -> UnsafeMutablePointer<wlr_xdg_surface>? {
+        var xdgSurface = wlr_xdg_surface_from_wlr_surface(self.pointee.parent)
+        while xdgSurface != nil && xdgSurface?.pointee.role == WLR_XDG_SURFACE_ROLE_POPUP {
+            xdgSurface = wlr_xdg_surface_from_wlr_surface(xdgSurface?.pointee.popup.pointee.parent)
+        }
+        return xdgSurface
+    }
+}
+
+extension Awc: Subsurface {
+    func commit(subsurface: UnsafeMutablePointer<wlr_subsurface>) {
+        if let parentXdgSurface = subsurface.parentToplevel() {
+            let parentSurface = Surface.xdg(surface: parentXdgSurface)
+            if let (_, sx, sy) = parentSurface.surfaces().first(where: { $0.0 == subsurface.pointee.surface }) {
+                self.damageWlrSurface(parent: parentSurface, wlrSurface: subsurface.pointee.surface, sx: sx, sy: sy)
+            }
+        }
+    }
+
+    func destroy(subsurface: UnsafeMutablePointer<wlr_subsurface>) {
+        self.removeListener(subsurface, SubsurfaceListener.self)
     }
 }
 

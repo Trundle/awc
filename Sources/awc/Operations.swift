@@ -106,6 +106,8 @@ extension Awc {
                     }
                 }
             }
+
+            wlr_output_damage_add_whole(output.data.damage)
         }
     }
 

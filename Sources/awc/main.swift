@@ -86,12 +86,15 @@ struct KeyModifiers: OptionSet {
 public class OutputDetails {
     public let output: UnsafeMutablePointer<wlr_output>
     public let outputLayout: UnsafeMutablePointer<wlr_output_layout>?
+    public let damage: UnsafeMutablePointer<wlr_output_damage>
 
     init(wlrOutput: UnsafeMutablePointer<wlr_output>,
-         outputLayout: UnsafeMutablePointer<wlr_output_layout>?
+         outputLayout: UnsafeMutablePointer<wlr_output_layout>?,
+         damage: UnsafeMutablePointer<wlr_output_damage>
     ) {
         self.output = wlrOutput
         self.outputLayout = outputLayout
+        self.damage = damage
     }
 
     var box: wlr_box {
@@ -131,6 +134,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let outputLayout: UnsafeMutablePointer<wlr_output_layout>
     private let renderer: UnsafeMutablePointer<wlr_renderer>
     let noOpOutput: UnsafeMutablePointer<wlr_output>
+    let noOpOutputDamage: UnsafeMutablePointer<wlr_output_damage>
     let cursor: UnsafeMutablePointer<wlr_cursor>
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
@@ -138,7 +142,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
     // The "mod" key to be used for ked bindings, typically logo
-    let mod: KeyModifiers = .alt
+    let mod: KeyModifiers = .logo
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
     private var listeners: [ListenerKey: UnsafeMutableRawPointer] = [:]
     var extensionData: [ObjectIdentifier: Any] = [:]
@@ -159,7 +163,11 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
             tag: "1",
             layout: layout
         )
-        let output = Output(data: OutputDetails(wlrOutput: noOpOutput, outputLayout: nil), workspace: workspace)
+        self.noOpOutputDamage = wlr_output_damage_create(noOpOutput)
+        let output = Output(
+            data: OutputDetails(wlrOutput: noOpOutput, outputLayout: nil, damage: self.noOpOutputDamage),
+            workspace: workspace
+        )
         var otherWorkspaces: [Workspace<L>] = []
         for i in 2...9 {
             otherWorkspaces.append(Workspace(tag: "\(i)", layout: layout))
@@ -203,8 +211,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         py: Int32,
         surface: UnsafeMutablePointer<wlr_surface>,
         sx: Int32,
-        sy: Int32,
-        when: UnsafePointer<timespec>
+        sy: Int32
     ) {
         // We first obtain a wlr_texture, which is a GPU resource. wlroots
         // automatically handles negotiating these with the client. The underlying
@@ -244,9 +251,6 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
             // This takes our matrix, the texture, and an alpha, and performs the actual rendering on the GPU.
             wlr_render_texture_with_matrix(self.renderer, texture, matrixPtr, 1)
         }
-
-        // This lets the client know that we've displayed that frame and it can prepare another one now if it likes.
-        wlr_surface_send_frame_done(surface, when)
     }
 
     private func viewAt(x: Double, y: Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
@@ -423,7 +427,6 @@ extension Awc {
         case .cursorMotionAbsolute(let cursor): handleCursorMotionAbsolute(cursor)
         case .cursorRequested(let event): handleCursorRequested(event)
         case .setSelectionRequested(let event): handleSetSelectionRequested(event)
-        case .frame(let output): handleFrame(output)
         case .key(let device, let keyEvent): handleKey(device, keyEvent)
         case .keyboardDestroyed(let device): handleKeyboardDestroyed(device)
         case .modifiers(let device): handleModifiers(device)
@@ -538,8 +541,8 @@ extension Awc {
     private func handleNewInput(_ device: UnsafeMutablePointer<wlr_input_device>) {
         if device.pointee.type == WLR_INPUT_DEVICE_KEYBOARD {
             let context = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
-            let keymap: OpaquePointer = "de,de(neo)".withCString { layoutPtr in
-                "grp:alt_space_toggle".withCString { optionsPtr in
+            let keymap: OpaquePointer = "de(nodeadkeys),de(neo)".withCString { layoutPtr in
+                "compose:rctrl,grp:alts_toggle".withCString { optionsPtr in
                     var rules = xkb_rule_names()
                     rules.layout = layoutPtr
                     rules.options = optionsPtr
@@ -612,10 +615,17 @@ extension Awc {
             wlr_output_layout_add_auto(self.outputLayout, wlrOutput)
         }
 
+        guard let damage = wlr_output_damage_create(wlrOutput) else {
+            print("[WaRN] Could not create output damage, output will be ignored")
+            return
+        }
+
+        self.addListener(damage, OutputDamageListener.newFor(emitter: damage, handler: self))
+
         self.modifyAndUpdate {
             if $0.current.data.output == self.noOpOutput {
                 let newOutput = Output(
-                    data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout),
+                    data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout, damage: damage),
                     workspace: $0.current.workspace
                 )
                 return $0.replace(current: newOutput)
@@ -623,7 +633,7 @@ extension Awc {
                 var hidden = Array(self.viewSet.hidden)
                 if let workspace = hidden.popLast() {
                     let newOutput = Output(
-                        data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout),
+                        data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout, damage: damage),
                         workspace: workspace
                     )
                     return $0.replace(
@@ -648,6 +658,10 @@ extension Awc {
 
         self.wlEventHandler.removeOutputListeners(output: wlrOutput)
 
+        if let output = self.viewSet.outputs().first(where: { $0.data.output == wlrOutput }) {
+            self.removeListener(output.data.damage, OutputDamageListener.self)
+        }
+
         self.modifyAndUpdate {
             if $0.current.data.output == wlrOutput {
                 if let newCurrent = $0.visible.first {
@@ -659,7 +673,11 @@ extension Awc {
                 } else {
                     // This was the last output, migrate to no-op output
                     let newCurrent = Output(
-                        data: OutputDetails(wlrOutput: self.noOpOutput, outputLayout: nil),
+                        data: OutputDetails(
+                            wlrOutput: self.noOpOutput,
+                            outputLayout: nil,
+                            damage: self.noOpOutputDamage
+                        ),
                         workspace: $0.current.workspace
                     )
                     return $0.replace(current: newCurrent)
@@ -684,67 +702,14 @@ extension Awc {
         }
     }
 
-    /**
-     * Called every time an output is ready to display a frame, so generally at the output's
-     * refresh rate.
-     */
-    private func handleFrame(_ wlrOutput: UnsafeMutablePointer<wlr_output>) {
-        // wlr_output_attach_render makes the OpenGL context current
-        guard wlr_output_attach_render(wlrOutput, nil) else {
-            return
-        }
-
-        var now = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &now)
-
-        // The "effective" resolution can change if one rotates the outputs
-        var width: Int32 = 0
-        var height: Int32 = 0
-        wlr_output_effective_resolution(wlrOutput, &width, &height)
-        // Begin the rendering (calls glViewport and some other GL sanity checks)
-        wlr_renderer_begin(self.renderer, width, height)
-
-        var color = float_rgba(r: 0.3, g: 0.3, b: 0.3, a: 1.0)
-        color.withPtr { wlr_renderer_clear(self.renderer, $0) }
-
-        // Find the workspace for this output
-        if let output = self.viewSet.outputs().first(where: { $0.data.output == wlrOutput }) {
-            let focus = self.viewSet.current.workspace.stack?.focus
-            for (parent, box) in output.arrangement {
-                if !parent.wantsFloating(awc: self) {
-                    let color = focus == .some(parent) ? activeBorderColor : inactiveBorderColor
-                    drawBorder(
-                        renderer: self.renderer, output: output.data.output, box: box, width: borderWidth, color: color
-                    )
-                }
-
-                withUnsafePointer(to: now) {
-                    for (surface, sx, sy) in parent.surfaces() {
-                        self.renderSurface(
-                            output: wlrOutput,
-                            px: box.x,
-                            py: box.y,
-                            surface: surface,
-                            sx: sx,
-                            sy: sy,
-                            when: $0
-                        )
-                    }
-                }
+    private func sendFrameDone(for output: Output<L>, when: inout timespec) {
+        for (parent, _) in output.arrangement {
+            for (surface, _, _) in parent.surfaces() {
+                // This lets the client know that we've displayed that frame and it can prepare another
+                // one now if it likes.
+                wlr_surface_send_frame_done(surface, &when)
             }
         }
-
-        // Hardware cursors are rendered by the GPU on a separate plane, and can be
-        // moved around without re-rendering what's beneath them - which is more
-        // efficient. However, not all hardware supports hardware cursors. For this
-        // reason, wlroots provides a software fallback, which we ask it to render
-        // here. wlr_cursor handles configuring hardware vs software cursors for you,
-        // and this function is a no-op when hardware cursors are in use.
-        wlr_output_render_software_cursors(wlrOutput, nil)
-
-        // Conclude rendering and swap the buffers, showing the final frame on-screen.
-        wlr_renderer_end(self.renderer)
-        wlr_output_commit(wlrOutput)
     }
 
     private func handleKey(
@@ -795,6 +760,114 @@ extension Awc {
         wlr_seat_keyboard_notify_modifiers(self.seat, &device.pointee.keyboard.pointee.modifiers)
     }
 }
+
+// MARK: Output damage tracking
+
+protocol OutputDamage: class {
+    func frame(outputDamage: UnsafeMutablePointer<wlr_output_damage>)
+}
+
+struct OutputDamageListener: PListener {
+    weak var handler: OutputDamage?
+    private var frame: wl_listener = wl_listener()
+
+    internal mutating func listen(to damage: UnsafeMutablePointer<wlr_output_damage>) {
+        Self.add(signal: &damage.pointee.events.frame, listener: &self.frame) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.frame, { $0.frame(outputDamage: $1) })
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.frame.link)
+    }
+}
+
+extension Awc: OutputDamage {
+    internal func frame(outputDamage: UnsafeMutablePointer<wlr_output_damage>) {
+        let wlrOutput = outputDamage.pointee.output!
+        guard let output = self.viewSet.outputs().first(where: { $0.data.output == wlrOutput }) else {
+            return
+        }
+
+        var bufferDamage = pixman_region32_t()
+        pixman_region32_init(&bufferDamage)
+        defer {
+            pixman_region32_fini(&bufferDamage)
+        }
+
+        var now = timespec()
+        clock_gettime(CLOCK_MONOTONIC, &now)
+        defer {
+            sendFrameDone(for: output, when: &now)
+        }
+
+        var needsFrame = false
+        guard wlr_output_damage_attach_render(output.data.damage, &needsFrame, &bufferDamage) && needsFrame else {
+            return
+        }
+
+        // The "effective" resolution can change if one rotates the outputs
+        var width: Int32 = 0
+        var height: Int32 = 0
+        wlr_output_effective_resolution(wlrOutput, &width, &height)
+        // Begin the rendering (calls glViewport and some other GL sanity checks)
+        wlr_renderer_begin(self.renderer, width, height)
+
+        var color = float_rgba(r: 0.3, g: 0.3, b: 0.3, a: 1.0)
+        color.withPtr { wlr_renderer_clear(self.renderer, $0) }
+
+        let focus = self.viewSet.current.workspace.stack?.focus
+        for (parent, box) in output.arrangement {
+            if !parent.wantsFloating(awc: self) {
+                let color = focus == .some(parent) ? activeBorderColor : inactiveBorderColor
+                drawBorder(
+                        renderer: self.renderer, output: output.data.output, box: box, width: borderWidth, color: color
+                )
+            }
+
+            for (surface, sx, sy) in parent.surfaces() {
+                self.renderSurface(output: wlrOutput, px: box.x, py: box.y, surface: surface, sx: sx, sy: sy)
+            }
+        }
+
+        // Hardware cursors are rendered by the GPU on a separate plane, and can be
+        // moved around without re-rendering what's beneath them - which is more
+        // efficient. However, not all hardware supports hardware cursors. For this
+        // reason, wlroots provides a software fallback, which we ask it to render
+        // here. wlr_cursor handles configuring hardware vs software cursors for you,
+        // and this function is a no-op when hardware cursors are in use.
+        wlr_output_render_software_cursors(wlrOutput, nil)
+
+        self.rendererEnd(wlrOutput: wlrOutput, damage: output.data.damage)
+    }
+
+    /// Conclude rendering and swap the buffers, showing the final frame on-screen.
+    private func rendererEnd(
+        wlrOutput: UnsafeMutablePointer<wlr_output>,
+        damage: UnsafeMutablePointer<wlr_output_damage>
+    ) {
+        wlr_renderer_end(self.renderer)
+
+        var width: Int32 = 0
+        var height: Int32 = 9
+        wlr_output_transformed_resolution(wlrOutput, &width, &height)
+
+        var frameDamage = pixman_region32_t()
+        pixman_region32_init(&frameDamage)
+        defer {
+            pixman_region32_fini(&frameDamage)
+        }
+
+        let transform = wlr_output_transform_invert(wlrOutput.pointee.transform)
+        wlr_region_transform(&frameDamage, &damage.pointee.current, transform, width, height)
+
+        wlr_output_set_damage(wlrOutput, &frameDamage)
+
+        wlr_output_commit(wlrOutput)
+    }
+}
+
+// MARK: main
 
 func main() {
     wlr_log_init(WLR_DEBUG, nil)

@@ -36,6 +36,10 @@ protocol XWaylandSurface: class {
     func unmap(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
 }
 
+protocol XWaylandMappedSurface: class {
+    func commit(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
+}
+
 private struct XWaylandListener: PListener {
     weak var handler: XWayland?
     private var newSurface: wl_listener = wl_listener()
@@ -96,6 +100,27 @@ private struct XWaylandSurfaceListener: PListener {
         wl_list_remove(&destroy.link)
         wl_list_remove(&map.link)
         wl_list_remove(&unmap.link)
+    }
+}
+
+private struct XWaylandMappedSurfaceListener: PListener {
+    weak var handler: XWaylandMappedSurface?
+    private var commit: wl_listener = wl_listener()
+
+    mutating func listen(to surface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        Self.add(signal: &surface.pointee.surface.pointee.events.commit, listener: &self.commit) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.commit,
+                { (handler, surface: UnsafeMutablePointer<wlr_surface>) in
+                    if let xwaylandSurface = wlr_xwayland_surface_from_wlr_surface(surface) {
+                        handler.commit(xwaylandSurface: xwaylandSurface)
+                    }
+                }
+            )
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.commit.link)
     }
 }
 
@@ -179,12 +204,39 @@ extension Awc: XWaylandSurface {
     internal func map(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         let surface = Surface.xwayland(surface: xwaylandSurface)
         if self.unmapped.remove(surface) != nil {
+            self.addListener(
+                xwaylandSurface,
+                XWaylandMappedSurfaceListener.newFor(emitter: xwaylandSurface, handler: self)
+            )
             self.manage(surface: surface)
         }
     }
 
     internal func unmap(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        self.removeListener(xwaylandSurface, XWaylandMappedSurfaceListener.self)
         handleUnmap(surface: Surface.xwayland(surface: xwaylandSurface))
+    }
+}
+
+extension Awc: XWaylandMappedSurface {
+    internal func commit(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
+        let surface = Surface.xwayland(surface: xwaylandSurface)
+        guard let output = self.viewSet.findOutput(view: surface) else {
+            return
+        }
+        guard let box = output.arrangement.first(where: { $0.0 == surface})?.1 else {
+            return
+        }
+
+        var damage = pixman_region32_t()
+        pixman_region32_init(&damage)
+        defer {
+            pixman_region32_fini(&damage)
+        }
+
+        wlr_surface_get_effective_damage(xwaylandSurface.pointee.surface, &damage)
+        pixman_region32_translate(&damage, box.x, box.y)
+        wlr_output_damage_add(output.data.damage, &damage)
     }
 }
 

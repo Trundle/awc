@@ -82,8 +82,6 @@ extension Awc: LayerShell {
                 }
                 listenerPtr.deallocate()
             }
-
-
         }
     }
 
@@ -99,6 +97,14 @@ extension Awc: LayerShell {
 
         let usableBox = self.arrangeLayers(wlrOutput: layerSurface.pointee.output, layers: layers)
         data.usableBoxes[layerSurface.pointee.output] = usableBox
+
+        withLayerData(layerSurface, or: ()) { layerData in
+            if let box = layerData.boxes[layerSurface],
+                let output = self.viewSet.outputs().first(where: { $0.data.output == layerSurface.pointee.output })
+            {
+                self.damage(output: output, layerSurface: layerSurface, box: box)
+            }
+        }
     }
 
     func map(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
@@ -115,6 +121,18 @@ extension Awc: LayerShell {
             layerData.mapped.remove(layerSurface)
             layerData.unmapped.insert(layerSurface)
         }
+    }
+
+    private func damage(output: Output<L>, layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>, box: wlr_box) {
+        var damage = pixman_region32_t()
+        pixman_region32_init(&damage)
+        defer {
+            pixman_region32_fini(&damage)
+        }
+
+        wlr_surface_get_effective_damage(layerSurface.pointee.surface, &damage)
+        pixman_region32_translate(&damage, box.x, box.y)
+        wlr_output_damage_add(output.data.damage, &damage)
     }
 
     private func arrangeLayers(

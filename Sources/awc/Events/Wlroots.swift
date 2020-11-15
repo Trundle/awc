@@ -183,13 +183,9 @@ private struct OutputListener: Listener {
     typealias Emitter = wlr_output
 
     weak var handler: WlEventHandler?
-    private var frame: wl_listener = wl_listener()
     private var outputDestroyed: wl_listener = wl_listener()
 
     fileprivate mutating func listen(to output: UnsafeMutablePointer<wlr_output>) {
-        OutputListener.add(signal: &output.pointee.events.frame, listener: &self.frame) { (listener, data) in
-            OutputListener.emitEvent(from: listener!, data: data!, \OutputListener.frame, { Event.frame(output: $0) })
-        }
         OutputListener.add(signal: &output.pointee.events.destroy, listener: &self.outputDestroyed) { listener, data in
             OutputListener.emitEvent(from: listener!, data: data!,
                     \OutputListener.outputDestroyed, { Event.outputDestroyed(output: $0) }
@@ -198,7 +194,6 @@ private struct OutputListener: Listener {
     }
 
     mutating func deregister() {
-        wl_list_remove(&self.frame.link)
         wl_list_remove(&self.outputDestroyed.link)
     }
 }

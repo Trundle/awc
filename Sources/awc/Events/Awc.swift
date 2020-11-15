@@ -1,8 +1,6 @@
 import Wlroots
 
 enum Event {
-    case frame(output: UnsafeMutablePointer<wlr_output>)
-
     /// Forwarded by the cursor when a pointer emits an axis event (e.g. scroll wheel).
     case cursorAxis(event: UnsafeMutablePointer<wlr_event_pointer_axis>)
     case cursorButton(event: UnsafeMutablePointer<wlr_event_pointer_button>)
