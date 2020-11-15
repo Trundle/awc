@@ -391,6 +391,19 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
                 wlr_session_change_vt(session, n)
             }
             return true
+        } else if sym == XKB_KEY_s && modifiers == [self.mod] {
+             // Swap workspaces on primary and secondary output
+            self.modifyAndUpdate {
+                if let firstVisible = $0.visible.first {
+                    return $0.replace(
+                        current: $0.current.copy(workspace: firstVisible.workspace),
+                        visible: [firstVisible.copy(workspace: $0.current.workspace)] + $0.visible[1...],
+                        hidden: $0.hidden
+                    )
+                } else {
+                    return $0
+                }
+            }
         }
         return false
     }
