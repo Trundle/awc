@@ -360,6 +360,11 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
                     return $0
                 }
             }
+            return true
+        } else if sym == XKB_KEY_m && modifiers == [self.mod] {
+            // Focus main window
+            self.modifyAndUpdate { $0.focusMain() }
+            return true
         }
         return false
     }

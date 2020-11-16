@@ -7,6 +7,12 @@ public struct Stack<T> {
     public let up: List<T>
     public let focus: T
     public let down: List<T>
+
+    public init(up: List<T>, focus: T, down: List<T>) {
+        self.up = up
+        self.focus = focus
+        self.down = down
+    }
 }
 
 extension Stack {

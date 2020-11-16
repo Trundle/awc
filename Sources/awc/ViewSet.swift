@@ -193,6 +193,15 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
         }
     }
 
+    func focusMain() -> ViewSet<L, View> {
+        self.modify {
+            switch $0.up.reverse() {
+            case .empty: return $0
+            case .cons(let x, let xs): return Stack(up: .empty, focus: x, down: xs +++ $0.focus ++ $0.down)
+            }
+        }
+    }
+
     /// Returns the focused element of the current stack (if there is one).
     func peek() -> L.View? {
         self.current.workspace.stack?.focus
