@@ -1,6 +1,20 @@
 import Libawc
 import Wlroots
 
+public struct ViewAttribute: Hashable {
+    internal let name: String
+
+    static let focused: ViewAttribute = "focused"
+    static let floating: ViewAttribute = "floating"
+    static let undecorated: ViewAttribute = "undecorated"
+}
+
+extension ViewAttribute: ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) {
+        self = ViewAttribute(name: value)
+    }
+}
+
 public protocol Layout {
     associatedtype View
     /// Type that is used by `Output`s to manage their state.
@@ -11,7 +25,7 @@ public protocol Layout {
         dataProvider: ExtensionDataProvider,
         output: Output<L>,
         box: wlr_box
-    ) -> [(L.View, wlr_box)] where L.View == View, L.OutputData == OutputData
+    ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where L.View == View, L.OutputData == OutputData
 
     /// Arrange the list of given views.
     func doLayout<L: Layout>(
@@ -19,7 +33,7 @@ public protocol Layout {
         output: Output<L>,
         stack: Stack<L.View>,
         box: wlr_box
-    ) -> [(L.View, wlr_box)] where L.View == View, L.OutputData == OutputData
+    ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where L.View == View, L.OutputData == OutputData
 
     func firstLayout() -> Self
     func nextLayout() -> Self?
@@ -31,7 +45,7 @@ extension Layout {
         dataProvider: ExtensionDataProvider,
         output: Output<L>,
         box: wlr_box
-    ) -> [(L.View, wlr_box)] {
+    ) -> [(L.View, Set<ViewAttribute>, wlr_box)] {
         []
     }
 
@@ -51,8 +65,8 @@ public class Full<View, OutputData> : Layout {
         output: Output<L>,
         stack: Stack<L.View>,
         box: wlr_box
-    ) -> [(L.View, wlr_box)] where L.View == View {
-        [(stack.focus, box)]
+    ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where L.View == View {
+        [(stack.focus, [.focused], box)]
     }
 }
 
@@ -67,14 +81,14 @@ public class TwoPane<View, OutputData>: Layout {
         output: Output<L>,
         stack: Stack<View>,
         box: wlr_box
-    ) -> [(View, wlr_box)] where L.View == View {
+    ) -> [(View, Set<ViewAttribute>, wlr_box)] where L.View == View {
         let (left, right) = splitHorizontally(by: self.split, box: box)
         switch stack.up.reverse() {
-        case .cons(let main, _): return [(main, left), (stack.focus, right)]
+        case .cons(let main, _): return [(main, [], left), (stack.focus, [.focused], right)]
         case .empty:
             switch stack.down {
-            case .cons(let next, _): return [(next, right), (stack.focus, left)]
-            case .empty: return [(stack.focus, box)]
+            case .cons(let next, _): return [(next, [], right), (stack.focus, [.focused], left)]
+            case .empty: return [(stack.focus, [.focused], box)]
             }
         }
     }
@@ -113,7 +127,7 @@ public final class Choose<Left: Layout, Right: Layout>: Layout
         dataProvider: ExtensionDataProvider,
         output: Output<L>,
         box: wlr_box
-    ) -> [(Left.View, wlr_box)] where L.View == Left.View {
+    ) -> [(Left.View, Set<ViewAttribute>, wlr_box)] where L.View == Left.View {
         switch self.current {
         case .left: return self.left.emptyLayout(dataProvider: dataProvider, output: output, box: box)
         case .right: return self.right.emptyLayout(dataProvider: dataProvider, output: output, box: box)
@@ -125,7 +139,7 @@ public final class Choose<Left: Layout, Right: Layout>: Layout
         output: Output<L>,
         stack: Stack<Left.View>,
         box: wlr_box
-    ) -> [(Left.View, wlr_box)] where L.View == Left.View, L.OutputData == Left.OutputData {
+    ) -> [(Left.View, Set<ViewAttribute>, wlr_box)] where L.View == Left.View, L.OutputData == Left.OutputData {
         switch self.current {
         case .left: return self.left.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
         case .right: return self.right.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
@@ -175,10 +189,10 @@ public final class Rotated<L: Layout>: Layout {
         dataProvider: ExtensionDataProvider,
         output: Output<M>,
         box: wlr_box
-    ) -> [(L.View, wlr_box)] where M.View == L.View, M.OutputData == L.OutputData {
+    ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where M.View == L.View, M.OutputData == L.OutputData {
         self.layout
             .emptyLayout(dataProvider: dataProvider, output: output, box: box.rotated())
-            .map { (view, viewBox) in (view, viewBox.rotated()) }
+            .map { (view, attributes, viewBox) in (view, attributes, viewBox.rotated()) }
     }
 
     public func doLayout<M: Layout>(
@@ -186,10 +200,10 @@ public final class Rotated<L: Layout>: Layout {
         output: Output<M>,
         stack: Stack<L.View>,
         box: wlr_box
-    ) -> [(L.View, wlr_box)] where M.View == L.View, M.OutputData == L.OutputData {
+    ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where M.View == L.View, M.OutputData == L.OutputData {
         self.layout
             .doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box.rotated())
-            .map { (view, viewBox) in (view, viewBox.rotated()) }
+            .map { (view, attributes, viewBox) in (view, attributes, viewBox.rotated()) }
     }
 }
 

@@ -2,14 +2,12 @@
 // A Wayland Compositor
 //
 
-import Glibc
-
 import Wlroots
 
 
 // MARK: Wlroots compatibility structures
 
-struct float_rgba {
+public struct float_rgba {
     public var r: Float
     public var g: Float
     public var b: Float
@@ -112,6 +110,9 @@ public protocol ExtensionDataProvider {
     func getExtensionData<D>() -> D?
 }
 
+public typealias RenderSurfaceHook<L: Layout> =
+    (UnsafeMutablePointer<wlr_renderer>, Output<L>, Surface, Set<ViewAttribute>, wlr_box) -> ()
+
 // XXX introduce some kind of configuration object instead?
 let borderWidth: Int32 = 2
 let activeBorderColor = float_rgba(r: 0.89, g: 0.773, b: 0.596, a: 1.0)
@@ -138,11 +139,12 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let cursor: UnsafeMutablePointer<wlr_cursor>
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
+    let renderSurfaceHook: RenderSurfaceHook<L>
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
     // The "mod" key to be used for ked bindings, typically logo
-    let mod: KeyModifiers = .logo
+    let mod: KeyModifiers = .alt
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
     private var listeners: [ListenerKey: UnsafeMutableRawPointer] = [:]
     var extensionData: [ObjectIdentifier: Any] = [:]
@@ -157,7 +159,8 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         cursor: UnsafeMutablePointer<wlr_cursor>,
         cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>,
         seat: UnsafeMutablePointer<wlr_seat>,
-        layout: L
+        layout: L,
+        renderSurfaceHook: @escaping RenderSurfaceHook<L>
     ) {
         let workspace: Workspace<L> = Workspace(
             tag: "1",
@@ -182,6 +185,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.cursorManager = cursorManager
         self.seat = seat
         self.wlEventHandler = wlEventHandler
+        self.renderSurfaceHook = renderSurfaceHook
     }
 
     public func run() {
@@ -205,61 +209,13 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         }
     }
 
-    private func renderSurface(
-        output: UnsafeMutablePointer<wlr_output>,
-        px: Int32,
-        py: Int32,
-        surface: UnsafeMutablePointer<wlr_surface>,
-        sx: Int32,
-        sy: Int32
-    ) {
-        // We first obtain a wlr_texture, which is a GPU resource. wlroots
-        // automatically handles negotiating these with the client. The underlying
-        // resource could be an opaque handle passed from the client, or the client
-        // could have sent a pixel buffer which we copied to the GPU, or a few other
-        // means. You don't have to worry about this, wlroots takes care of it.
-        guard let texture = wlr_surface_get_texture(surface) else {
-            return
-        }
-
-        // We also have to apply the scale factor for HiDPI outputs. This is only
-        // part of the puzzle, AWC does not fully support HiDPI.
-        let scale = Double(output.pointee.scale)
-        var box = wlr_box(
-            x: Int32(Double(px + sx) * scale),
-            y: Int32(Double(py + sy) * scale),
-            width: Int32(Double(surface.pointee.current.width) * scale),
-            height: Int32(Double(surface.pointee.current.height) * scale)
-        )
-
-        // Those familiar with OpenGL are also familiar with the role of matrices
-        // in graphics programming. We need to prepare a matrix to render the view
-        // with. wlr_matrix_project_box is a helper which takes a box with a desired
-        // x, y coordinates, width and height, and an output geometry, then
-        // prepares an orthographic projection and multiplies the necessary
-        // transforms to produce a model-view-projection matrix.
-        //
-        // Naturally you can do this any way you like, for example to make a 3D
-        // compositor.
-        var matrix: matrix9 = (0, 0, 0, 0, 0, 0, 0, 0, 0)
-        let transform = wlr_output_transform_invert(surface.pointee.current.transform)
-        withUnsafeMutablePointer(to: &matrix.0) { matrixPtr in
-            withUnsafePointer(to: &output.pointee.transform_matrix.0) { (outputTransformMatrixPtr) in
-                wlr_matrix_project_box(matrixPtr, &box, transform, 0, outputTransformMatrixPtr)
-            }
-
-            // This takes our matrix, the texture, and an alpha, and performs the actual rendering on the GPU.
-            wlr_render_texture_with_matrix(self.renderer, texture, matrixPtr, 1)
-        }
-    }
-
     private func viewAt(x: Double, y: Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
     {
         for output in self.viewSet.outputs() {
             let outputLayoutBox = output.data.box
             let outputX = x - Double(outputLayoutBox.x)
             let outputY = y - Double(outputLayoutBox.y)
-            for (view, box) in output.arrangement.reversed() {
+            for (view, _, box) in output.arrangement.reversed() {
                 if box.contains(x: Int(outputX), y: Int(outputY)) {
                     let surfaceX = outputX - Double(box.x)
                     let surfaceY = outputY - Double(box.y)
@@ -716,7 +672,7 @@ extension Awc {
     }
 
     private func sendFrameDone(for output: Output<L>, when: inout timespec) {
-        for (parent, _) in output.arrangement {
+        for (parent, _, _) in output.arrangement {
             for (surface, _, _) in parent.surfaces() {
                 // This lets the client know that we've displayed that frame and it can prepare another
                 // one now if it likes.
@@ -829,18 +785,8 @@ extension Awc: OutputDamage {
         var color = float_rgba(r: 0.3, g: 0.3, b: 0.3, a: 1.0)
         color.withPtr { wlr_renderer_clear(self.renderer, $0) }
 
-        let focus = self.viewSet.current.workspace.stack?.focus
-        for (parent, box) in output.arrangement {
-            if !parent.wantsFloating(awc: self) {
-                let color = focus == .some(parent) ? activeBorderColor : inactiveBorderColor
-                drawBorder(
-                        renderer: self.renderer, output: output.data.output, box: box, width: borderWidth, color: color
-                )
-            }
-
-            for (surface, sx, sy) in parent.surfaces() {
-                self.renderSurface(output: wlrOutput, px: box.x, py: box.y, surface: surface, sx: sx, sy: sy)
-            }
+        for (parent, attributes, box) in output.arrangement {
+            self.renderSurfaceHook(self.renderer, output, parent, attributes, box)
         }
 
         // Hardware cursors are rendered by the GPU on a separate plane, and can be
@@ -979,7 +925,8 @@ func main() {
     wlr_gamma_control_manager_v1_create(wlDisplay)
 
     let full = Full<Surface, OutputDetails>()
-    let layout = LayerLayout(wrapped: full ||| TwoPane() ||| Rotated(layout: TwoPane()))
+    let layouts = full ||| TwoPane() ||| Rotated(layout: TwoPane())
+    let layout = LayerLayout(wrapped: BorderShrinkLayout(borderWidth: borderWidth, layout: layouts))
     let awc = Awc(
         wlEventHandler: wlEventHandler,
         wlDisplay: wlDisplay,
@@ -990,7 +937,13 @@ func main() {
         cursor: cursor!,
         cursorManager: cursorManager!,
         seat: seat!,
-        layout: layout
+        layout: layout,
+        renderSurfaceHook: smartBorders(
+            borderWidth: borderWidth,
+            activeBorderColor: activeBorderColor,
+            inactiveBoarderColor: inactiveBorderColor,
+            renderSurface
+        )
     )
 
     // Set up Shells

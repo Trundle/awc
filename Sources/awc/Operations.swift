@@ -88,7 +88,7 @@ extension Awc {
             if let stack = output.workspace.stack?.filter({ !self.viewSet.floating.contains(key: $0) }) {
                 let arrangement =
                     output.workspace.layout.doLayout(dataProvider: self, output: output, stack: stack, box: outputBox)
-                for (surface, box) in arrangement {
+                for (surface, _, box) in arrangement {
                     surface.configure(output: outputLayoutBox, box: box)
                 }
                 output.arrangement = arrangement
@@ -102,7 +102,7 @@ extension Awc {
                 for surface in stack.toList() {
                     if let box = self.viewSet.floating[surface] {
                         surface.configure(output: outputLayoutBox, box: box)
-                        output.arrangement.append((surface, box))
+                        output.arrangement.append((surface, [.floating], box))
                     }
                 }
             }

@@ -4,8 +4,9 @@ import Wlroots
 public class Output<L: Layout> {
     public let workspace: Workspace<L>
     public let data: L.OutputData
+    // XXX should this moved to data?
     // The current surface arrangement
-    public var arrangement: [(L.View, wlr_box)] = []
+    public var arrangement: [(L.View, Set<ViewAttribute>, wlr_box)] = []
 
     init(data: L.OutputData,
          workspace: Workspace<L>

@@ -457,13 +457,13 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
         output: Output<L>,
         stack: Stack<Surface>,
         box: wlr_box
-    ) -> [(Surface, wlr_box)] where L.View == Surface, L.OutputData == OutputDetails {
+    ) -> [(Surface, Set<ViewAttribute>, wlr_box)] where L.View == Surface, L.OutputData == OutputDetails {
         guard let data: LayerShellData = dataProvider.getExtensionData() else {
             return wrapped.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
         }
 
         // XXX Sway applies exclusive surfaces first, then the non-exclusive ones
-        var arrangement: [(Surface, wlr_box)] = []
+        var arrangement: [(Surface, Set<ViewAttribute>, wlr_box)] = []
         for layer in layerShellLayers[0..<(layerShellLayers.count / 2)] {
             addTo(arrangement: &arrangement, output: output, layer: layer, layerShellData: data)
         }
@@ -482,8 +482,8 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
         dataProvider: ExtensionDataProvider,
         output: Output<L>,
         box: wlr_box
-    ) -> [(Surface, wlr_box)] where L.View == Surface, L.OutputData == OutputDetails {
-        var arrangement: [(Surface, wlr_box)] = []
+    ) -> [(Surface, Set<ViewAttribute>, wlr_box)] where L.View == Surface, L.OutputData == OutputDetails {
+        var arrangement: [(Surface, Set<ViewAttribute>, wlr_box)] = []
 
         if let data: LayerShellData = dataProvider.getExtensionData() {
             for layer in layerShellLayers {
@@ -507,7 +507,7 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
     }
 
     private func addTo<L: Layout>(
-        arrangement: inout [(Surface, wlr_box)],
+        arrangement: inout [(Surface, Set<ViewAttribute>, wlr_box)],
         output: Output<L>,
         layer: zwlr_layer_shell_v1_layer,
         layerShellData: LayerShellData
@@ -515,7 +515,7 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
         if let layer = layerShellData.layers[output.data.output]?[layer] {
             for (layerSurface, box) in layer.boxes {
                 if layer.mapped.contains(layerSurface) {
-                    arrangement.append((Surface.layer(surface: layerSurface), box))
+                    arrangement.append((Surface.layer(surface: layerSurface), [.undecorated], box))
                 }
             }
         }

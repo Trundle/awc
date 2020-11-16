@@ -200,7 +200,6 @@ extension Awc: XWaylandSurface {
         }
     }
 
-
     internal func map(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         let surface = Surface.xwayland(surface: xwaylandSurface)
         if self.unmapped.remove(surface) != nil {
@@ -224,7 +223,7 @@ extension Awc: XWaylandMappedSurface {
         guard let output = self.viewSet.findOutput(view: surface) else {
             return
         }
-        guard let box = output.arrangement.first(where: { $0.0 == surface})?.1 else {
+        guard let box = output.arrangement.first(where: { $0.0 == surface})?.2 else {
             return
         }
 

@@ -188,7 +188,7 @@ extension Awc {
         guard let output = self.viewSet.findOutput(view: parent) else {
             return
         }
-        guard let box = output.arrangement.first(where: { $0.0 == parent})?.1 else {
+        guard let box = output.arrangement.first(where: { $0.0 == parent})?.2 else {
             return
         }
 
@@ -289,7 +289,7 @@ extension Awc: XdgPopup {
         {
             let surface = Surface.xdg(surface: parentXdgSurface)
             if let output = self.viewSet.findOutput(view: surface),
-               let outputBox = output.arrangement.first(where: { $0.0 == surface})?.1
+               let outputBox = output.arrangement.first(where: { $0.0 == surface})?.2
             {
                 var box = popup.pointee.geometry
                 box.x += outputBox.x
