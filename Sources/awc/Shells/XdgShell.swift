@@ -247,6 +247,18 @@ extension Awc: XdgMappedSurface {
 
     func newPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>) {
         self.addListener(popup.pointee.base, XdgPopupListener.newFor(emitter: popup, handler: self))
+
+        if let parentWlrSurface = popup.pointee.parent,
+           let parentXdgSurface = wlr_xdg_surface_from_wlr_surface(parentWlrSurface)
+        {
+            let parentSurface =  Surface.xdg(surface: parentXdgSurface)
+            if let output = self.viewSet.findOutput(view: parentSurface),
+               let (_, _, parentBox) = output.arrangement.first(where: { $0.0 == parentSurface })
+            {
+                var constraintBox = parentBox
+                wlr_xdg_popup_unconstrain_from_box(popup, &constraintBox)
+            }
+        }
     }
 
     func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>) {
