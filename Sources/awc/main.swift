@@ -956,6 +956,8 @@ func main() {
     setupLayerShell(display: wlDisplay, awc: awc)
     setupXWayland(display: wlDisplay, compositor: compositor!, awc: awc)
 
+    wlr_screencopy_manager_v1_create(wlDisplay)
+
     // Set up decorations: Wayland knows server-side and client-side decorations. We provide server-side decorations.
     setUpDecorations(wlDisplay: wlDisplay, awc: awc)
 
