@@ -1,6 +1,6 @@
 import Wlroots
 
-private func renderSurface(
+internal func renderSurface(
     renderer: UnsafeMutablePointer<wlr_renderer>,
     output: UnsafeMutablePointer<wlr_output>,
     px: Int32,

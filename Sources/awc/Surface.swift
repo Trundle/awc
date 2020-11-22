@@ -109,7 +109,7 @@ extension Surface {
         switch self {
         case .layer(let surface): return collectLayerSurfaces(surface)
         case .xdg(let surface): return collectXdgSurfaces(surface)
-        case .xwayland(let surface): return collectXWaylandSurfaces(surface)
+        case .xwayland(let surface): return surface.pointee.surface.surfaces()
         }
     }
 
@@ -140,24 +140,6 @@ extension Surface {
                     surface,
                     {
                         $3!.bindMemory(to: [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)].self, capacity: 1)
-                                .pointee
-                                .append(($0!, $1, $2))
-                    },
-                    surfacesPtr
-            )
-        }
-        return surfaces
-    }
-
-    private func collectXWaylandSurfaces(
-        _ surface: UnsafeMutablePointer<wlr_xwayland_surface>
-    ) -> [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] {
-        var surfaces: [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] = []
-        withUnsafeMutablePointer(to: &surfaces) { (surfacesPtr) in
-            wlr_surface_for_each_surface(
-                    surface.pointee.surface,
-                    {
-                        $3!.bindMemory(to: [(UnsafeMutablePointer < wlr_surface>, Int32, Int32)].self, capacity: 1)
                                 .pointee
                                 .append(($0!, $1, $2))
                     },

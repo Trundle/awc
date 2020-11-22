@@ -8,13 +8,6 @@ enum Event {
     case cursorMotion(event: UnsafeMutablePointer<wlr_event_pointer_motion>)
     case cursorMotionAbsolute(event: UnsafeMutablePointer<wlr_event_pointer_motion_absolute>)
 
-    /// Raised by the seat when a client provides a cursor image.
-    case cursorRequested(event: UnsafeMutablePointer<wlr_seat_pointer_request_set_cursor_event>)
-
-    /// This event is raised by the seat when a client wants to set the selection,
-    /// usually when the user copies something.
-    case setSelectionRequested(event: UnsafeMutablePointer<wlr_seat_request_set_selection_event>)
-
     case key(device: UnsafeMutablePointer<wlr_input_device>, event: UnsafeMutablePointer<wlr_event_keyboard_key>)
     case keyboardDestroyed(device: UnsafeMutablePointer<wlr_input_device>)
     case modifiers(device: UnsafeMutablePointer<wlr_input_device>)

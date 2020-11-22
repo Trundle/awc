@@ -27,6 +27,14 @@ internal func wlContainer<R>(of: UnsafeMutableRawPointer, _ path: PartialKeyPath
     (of - MemoryLayout<R>.offset(of: path)!).bindMemory(to: R.self, capacity: 1)
 }
 
+internal func toString<T>(array: T) -> String {
+    withUnsafePointer(to: array) {
+        $0.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout.size(ofValue: $0)) {
+            String(cString: $0)
+        }
+    }
+}
+
 extension wlr_box {
     func contains(x: Int, y: Int) -> Bool {
         self.x <= x && x < self.x + self.width && self.y <= y && y < self.y + self.height
@@ -47,6 +55,22 @@ extension UnsafeMutablePointer where Pointee == wlr_surface {
 
     func subsurface(of parent: UnsafeMutablePointer<wlr_surface>) -> Bool {
         parent.pointee.subsurfaces.contains(\wlr_subsurface.parent_link, where: { $0.pointee.surface == self })
+    }
+
+    func surfaces() -> [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] {
+        var surfaces: [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] = []
+        withUnsafeMutablePointer(to: &surfaces) { (surfacesPtr) in
+            wlr_surface_for_each_surface(
+                self,
+                {
+                    $3!.bindMemory(to: [(UnsafeMutablePointer < wlr_surface>, Int32, Int32)].self, capacity: 1)
+                        .pointee
+                        .append(($0!, $1, $2))
+                },
+                surfacesPtr
+            )
+        }
+        return surfaces
     }
 }
 
@@ -148,6 +172,10 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
     private var listeners: [ListenerKey: UnsafeMutableRawPointer] = [:]
     var extensionData: [ObjectIdentifier: Any] = [:]
+    /// Set to the drag handler if a dragging operation is taking place
+    var dragging: ((UInt32, Double, Double) -> ())? = nil
+    // Additional overlay surfaces, for example Drag and Drop icons
+    internal var surfaces: [UnsafeMutablePointer<wlr_surface>: (Double, Double)] = [:]
 
     init(
         wlEventHandler: WlEventHandler,
@@ -399,8 +427,6 @@ extension Awc {
         case .cursorFrame: handleCursorFrame()
         case .cursorMotion(let cursor): handleCursorMotion(cursor)
         case .cursorMotionAbsolute(let cursor): handleCursorMotionAbsolute(cursor)
-        case .cursorRequested(let event): handleCursorRequested(event)
-        case .setSelectionRequested(let event): handleSetSelectionRequested(event)
         case .key(let device, let keyEvent): handleKey(device, keyEvent)
         case .keyboardDestroyed(let device): handleKeyboardDestroyed(device)
         case .modifiers(let device): handleModifiers(device)
@@ -442,6 +468,8 @@ extension Awc {
                     }
                 }
             }
+        } else if event.pointee.state == WLR_BUTTON_RELEASED && self.dragging != nil {
+            self.dragging = nil
         }
 
         // Otherwise notify the client with pointer focus that a button press has occurred
@@ -486,7 +514,10 @@ extension Awc {
     private func handleCursorMotion(time: UInt32) {
         let cx = self.cursor.pointee.x
         let cy = self.cursor.pointee.y
-        if let (_, surface, sx, sy) = self.viewAt(x: cx, y: cy) {
+
+        if let dragging = self.dragging {
+            dragging(time, cx, cy)
+        } else if let (_, surface, sx, sy) = self.viewAt(x: cx, y: cy) {
             wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
             wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
         } else {
@@ -496,20 +527,6 @@ extension Awc {
             wlr_xcursor_manager_set_cursor_image(self.cursorManager, "left_ptr", self.cursor)
             wlr_seat_pointer_clear_focus(self.seat)
         }
-    }
-
-    private func handleCursorRequested(_ event: UnsafeMutablePointer<wlr_seat_pointer_request_set_cursor_event>) {
-        let focusedClient = self.seat.pointee.pointer_state.focused_client
-        // This can be sent by any client, so we check to make sure this one is actually has pointer focus first.
-        if focusedClient == event.pointee.seat_client {
-            wlr_cursor_set_surface(
-                self.cursor, event.pointee.surface, event.pointee.hotspot_x, event.pointee.hotspot_y
-            )
-        }
-    }
-
-    private func handleSetSelectionRequested(_ event: UnsafeMutablePointer<wlr_seat_request_set_selection_event>) {
-        wlr_seat_set_selection(self.seat, event.pointee.source, event.pointee.serial)
     }
 
     private func handleNewInput(_ device: UnsafeMutablePointer<wlr_input_device>) {
@@ -576,11 +593,7 @@ extension Awc {
         // The output layout utility automatically adds a wl_output global to the
         // display, which Wayland clients can see to find out information about the
         // output (such as DPI, scale factor, manufacturer, etc).
-        let name = withUnsafePointer(to: wlrOutput.pointee.name) {
-            $0.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout.size(ofValue: $0)) {
-                String(cString: $0)
-            }
-        }
+        let name = toString(array: wlrOutput.pointee.name)
         if name == "eDP-1" {
            wlr_output_layout_add(self.outputLayout, wlrOutput, 0, 0)
         } else if name == "DP-5" {
@@ -735,6 +748,49 @@ extension Awc {
     }
 }
 
+// MARK: Seat events
+extension Awc: SeatEventHandler {
+    internal func cursorRequested(event: UnsafeMutablePointer<wlr_seat_pointer_request_set_cursor_event>) {
+        let focusedClient = self.seat.pointee.pointer_state.focused_client
+        // This can be sent by any client, so we check to make sure this one is actually has pointer focus first.
+        if focusedClient == event.pointee.seat_client {
+            wlr_cursor_set_surface(
+                    self.cursor, event.pointee.surface, event.pointee.hotspot_x, event.pointee.hotspot_y
+            )
+        }
+    }
+
+    internal func setSelectionRequested(event: UnsafeMutablePointer<wlr_seat_request_set_selection_event>) {
+        wlr_seat_set_selection(self.seat, event.pointee.source, event.pointee.serial)
+    }
+
+    internal func dragRequested(event: UnsafeMutablePointer<wlr_seat_request_start_drag_event>) {
+        if wlr_seat_validate_pointer_grab_serial(self.seat, event.pointee.origin, event.pointee.serial) {
+            wlr_seat_start_pointer_drag(self.seat, event.pointee.drag, event.pointee.serial)
+        } else {
+            wlr_data_source_destroy(event.pointee.drag.pointee.source)
+        }
+    }
+
+    internal func start(drag: UnsafeMutablePointer<wlr_drag>) {
+        if viewAt(x: self.cursor.pointee.x, y: self.cursor.pointee.y) != nil {
+            if let icon = drag.pointee.icon {
+                handleNewDrag(icon: icon)
+            }
+            self.dragging = { (time, x, y) in
+                if let (_, surface, sx, sy) = self.viewAt(x: x, y: y) {
+                    wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
+                    wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
+
+                    if let icon = drag.pointee.icon {
+                        self.updatePosition(icon: icon)
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: Output damage tracking
 
 protocol OutputDamage: class {
@@ -794,6 +850,9 @@ extension Awc: OutputDamage {
             self.renderSurfaceHook(self.renderer, output, parent, attributes, box)
         }
 
+        // Render additional surfaces such as drag and drop icons
+        self.renderAdditional(output: output)
+
         // Hardware cursors are rendered by the GPU on a separate plane, and can be
         // moved around without re-rendering what's beneath them - which is more
         // efficient. However, not all hardware supports hardware cursors. For this
@@ -803,6 +862,25 @@ extension Awc: OutputDamage {
         wlr_output_render_software_cursors(wlrOutput, nil)
 
         self.rendererEnd(wlrOutput: wlrOutput, damage: output.data.damage)
+    }
+
+    private func renderAdditional(output: Output<L>) {
+        let outputBox = output.data.box
+        for (surface, (x, y)) in self.surfaces.filter({ outputBox.contains(x: Int($0.value.0), y: Int($0.value.1)) }) {
+            let px = Int32(x) - outputBox.x
+            let py = Int32(y) - outputBox.y
+            for (childSurface, sx, sy) in surface.surfaces() {
+                renderSurface(
+                    renderer: self.renderer,
+                    output: output.data.output,
+                    px: px,
+                    py: py,
+                    surface: childSurface,
+                    sx: sx,
+                    sy: sy
+                )
+            }
+        }
     }
 
     /// Conclude rendering and swap the buffers, showing the final frame on-screen.
@@ -876,14 +954,13 @@ func main() {
     let outputLayout = wlr_output_layout_create()
 
     let wlEventHandler = WlEventHandler()
+    wlEventHandler.addBackendListeners(backend: backend!)
 
     // Configures a seat, which is a single "seat" at which a user sits and
     // operates the computer. This conceptually includes up to one keyboard,
     // pointer, touch, and drawing tablet device. We also rig up a listener to
     // let us know when new input devices are available on the backend.
-    wlEventHandler.addBackendListeners(backend: backend!)
     let seat = wlr_seat_create(wlDisplay, "seat0")
-    wlEventHandler.addSeatListeners(seat: seat!)
 
     // Creates a cursor, which is a wlroots utility for tracking the cursor image shown on screen.
     let cursor = wlr_cursor_create()
@@ -950,6 +1027,8 @@ func main() {
             renderSurface
         )
     )
+
+    awc.addListener(seat!, SeatListener.newFor(emitter: seat!, handler: awc))
 
     // Set up Shells
     setUpXdgShell(display: wlDisplay, awc: awc)

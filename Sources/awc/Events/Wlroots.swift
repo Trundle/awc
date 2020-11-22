@@ -32,10 +32,6 @@ private struct Listeners {
     var cursorMotion: wl_listener = wl_listener()
     var cursorMotionAbsolute: wl_listener = wl_listener()
 
-    // Seat
-    var requestCursor: wl_listener = wl_listener()
-    var requestSetSelection: wl_listener = wl_listener()
-
     init() {
         var pendingEvents: [Event] = []
         self.onEvent = { pendingEvents.append($0) }
@@ -154,6 +150,58 @@ extension Listener {
             let typedData = data.bindMemory(to: D.self, capacity: 1)
             listenerPtr.pointee.handler?.onEvent(eventFactory(state, typedData))
         }
+    }
+}
+
+protocol SeatEventHandler: class {
+    /// Raised by the seat when a client provides a cursor image.
+    func cursorRequested(event: UnsafeMutablePointer<wlr_seat_pointer_request_set_cursor_event>)
+
+    /// This event is raised by the seat when a client wants to set the selection,
+    /// usually when the user copies something.
+    func setSelectionRequested(event: UnsafeMutablePointer<wlr_seat_request_set_selection_event>)
+
+    func dragRequested(event: UnsafeMutablePointer<wlr_seat_request_start_drag_event>)
+    func start(drag: UnsafeMutablePointer<wlr_drag>)
+}
+
+struct SeatListener: PListener {
+    weak var handler: SeatEventHandler?
+    var requestCursor: wl_listener = wl_listener()
+    var requestSetSelection: wl_listener = wl_listener()
+    var requestStartDrag: wl_listener = wl_listener()
+    var startDrag: wl_listener = wl_listener()
+
+    mutating func listen(to seat: UnsafeMutablePointer<wlr_seat>) {
+        Self.add(signal: &seat.pointee.events.request_set_cursor, listener: &self.requestCursor) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.requestCursor, { $0.cursorRequested(event: $1) })
+        }
+
+        Self.add(signal: &seat.pointee.events.request_set_selection, listener: &self.requestSetSelection) {
+            (listener, data) in
+            Self.handle(
+                from: listener!,
+                data: data!,
+                \Self.requestSetSelection,
+                { $0.setSelectionRequested(event: $1) }
+            )
+        }
+
+        Self.add(signal: &seat.pointee.events.request_start_drag, listener: &self.requestStartDrag) {
+            (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.requestStartDrag, { $0.dragRequested(event: $1) })
+        }
+
+        Self.add(signal: &seat.pointee.events.start_drag, listener: &self.startDrag) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.startDrag, { $0.start(drag: $1) })
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.requestCursor.link)
+        wl_list_remove(&self.requestSetSelection.link)
+        wl_list_remove(&self.requestStartDrag.link)
+        wl_list_remove(&self.startDrag.link)
     }
 }
 
@@ -364,30 +412,6 @@ class WlEventHandler {
 
     func removeOutputListeners(output: UnsafeMutablePointer<wlr_output>) {
         self.removeListener(output, OutputListener.self)
-    }
-
-    func addSeatListeners(seat: UnsafeMutablePointer<wlr_seat>) {
-        assert(self.singletonListeners.requestCursor.notify == nil, "already listening on a seat")
-
-        self.singletonListeners.requestCursor.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!,
-                data: data!,
-                \Listeners.requestCursor,
-                { Event.cursorRequested(event: $0) }
-            )
-        }
-
-        self.singletonListeners.requestSetSelection.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!,
-                data: data!,
-                \Listeners.requestSetSelection,
-                { Event.setSelectionRequested(event: $0) }
-            )
-        }
-        wl_signal_add(&seat.pointee.events.request_set_cursor, &self.singletonListeners.requestCursor)
-        wl_signal_add(&seat.pointee.events.request_set_selection, &self.singletonListeners.requestSetSelection)
     }
 
     private static func emitEvent<D>(
