@@ -3,6 +3,8 @@
 // Prevents a weird Swift compile error
 #include <termios.h>
 
+#include <linux/input-event-codes.h>
+
 #include <wlr/backend.h>
 #include <wlr/backend/noop.h>
 #include <wlr/render/wlr_renderer.h>

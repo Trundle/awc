@@ -91,7 +91,7 @@ extension wl_list {
 
 // MARK: Awc
 
-struct KeyModifiers: OptionSet {
+struct KeyModifiers: OptionSet, Hashable {
     let rawValue: UInt32
 
     static let shift = KeyModifiers(rawValue: WLR_MODIFIER_SHIFT.rawValue)
@@ -141,6 +141,12 @@ public typealias RenderSurfaceHook<L: Layout> =
 let borderWidth: Int32 = 2
 let activeBorderColor = float_rgba(r: 0.89, g: 0.773, b: 0.596, a: 1.0)
 let inactiveBorderColor = float_rgba(r: 0.541, g: 0.431, b: 0.392, a: 1.0)
+let modKey: KeyModifiers = .logo
+
+public struct ButtonActionKey: Hashable {
+    let modifiers: KeyModifiers
+    let button: UInt32
+}
 
 public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetails {
     private struct ListenerKey: Hashable {
@@ -164,11 +170,12 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
     let renderSurfaceHook: RenderSurfaceHook<L>
+    let buttonActions: [ButtonActionKey: (Awc<L>, Surface) -> ()]
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
     // The "mod" key to be used for ked bindings, typically logo
-    let mod: KeyModifiers = .alt
+    let mod: KeyModifiers = modKey
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
     private var listeners: [ListenerKey: UnsafeMutableRawPointer] = [:]
     var extensionData: [ObjectIdentifier: Any] = [:]
@@ -188,7 +195,8 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>,
         seat: UnsafeMutablePointer<wlr_seat>,
         layout: L,
-        renderSurfaceHook: @escaping RenderSurfaceHook<L>
+        renderSurfaceHook: @escaping RenderSurfaceHook<L>,
+        buttonActions: [ButtonActionKey: (Awc<L>, Surface) -> ()]
     ) {
         let workspace: Workspace<L> = Workspace(
             tag: "1",
@@ -214,6 +222,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.seat = seat
         self.wlEventHandler = wlEventHandler
         self.renderSurfaceHook = renderSurfaceHook
+        self.buttonActions = buttonActions
     }
 
     public func run() {
@@ -448,31 +457,38 @@ extension Awc {
     }
 
     private func handleCursorButton(_ event: UnsafeMutablePointer<wlr_event_pointer_button>) {
-        // Focus the surface under cursor if it's different from the current focus
-        if event.pointee.state == WLR_BUTTON_PRESSED {
+        if event.pointee.state == WLR_BUTTON_RELEASED && self.dragging != nil {
+            self.dragging = nil
+        } else {
             if let (parent, surface, _, _) = self.viewAt(x: self.cursor.pointee.x, y: self.cursor.pointee.y) {
+                // Focus the surface under cursor if it's different from the current focus
                 switch parent {
                 case .layer: ()
                 default:
                     let keyboardFocus = self.seat.pointee.keyboard_state.focused_surface
-                    guard surface == keyboardFocus || (
-                            keyboardFocus != nil && (
-                                    surface.subsurface(of: keyboardFocus!) ||
-                                    parent.wlrSurface.popup(of: keyboardFocus!)
-                            )
-                    ) else {
+                    if surface != keyboardFocus && (
+                        keyboardFocus == nil || (
+                            !surface.subsurface(of: keyboardFocus!) &&
+                            !parent.wlrSurface.popup(of: keyboardFocus!)
+                        )
+                    ) {
                         self.modifyAndUpdate {
                             $0.focus(view: parent)
                         }
-                        return
+                    }
+                }
+
+                if let keyboard = self.seat.pointee.keyboard_state.keyboard {
+                    let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(keyboard))
+                    let key = ButtonActionKey(modifiers: modifiers, button: event.pointee.button)
+                    if let action = self.buttonActions[key] {
+                        action(self, parent)
                     }
                 }
             }
-        } else if event.pointee.state == WLR_BUTTON_RELEASED && self.dragging != nil {
-            self.dragging = nil
         }
 
-        // Otherwise notify the client with pointer focus that a button press has occurred
+        // Notify the client with pointer focus that a button press has occurred
         wlr_seat_pointer_notify_button(self.seat, event.pointee.time_msec, event.pointee.button, event.pointee.state)
     }
 
@@ -909,6 +925,70 @@ extension Awc: OutputDamage {
     }
 }
 
+// MARK: button actions
+
+private func setWithinBounds(_ box: inout wlr_box, x: Int32, y: Int32, bounds: wlr_box) {
+    box.x = min(max(x, bounds.x), bounds.x + bounds.width - box.width)
+    box.y = min(max(y, bounds.y), bounds.y + bounds.height - box.height)
+}
+
+func defaultButtonActions<L: Layout>() -> [ButtonActionKey: (Awc<L>, Surface) -> ()] {
+    [ButtonActionKey(modifiers: [modKey], button: UInt32(BTN_LEFT)): { (awc, surface) in
+        // Set to floating and move with mouse
+        awc.modifyAndUpdate {
+            if let output = $0.findOutput(view: surface) {
+                var box = $0.floating[surface] ?? surface.preferredFloatingBox(awc: awc, output: output)
+                let startBox = box
+
+                let startX = awc.cursor.pointee.x
+                let startY = awc.cursor.pointee.y
+                awc.dragging = { (time, x, y) in
+                    setWithinBounds(
+                        &box,
+                        x: startBox.x + Int32(x - startX),
+                        y: startBox.y + Int32(y - startY),
+                        bounds: output.data.box
+                    )
+
+                    awc.modifyAndUpdate {
+                        $0.float(view: surface, box: box)
+                    }
+                }
+
+                return $0.float(view: surface, box: box)
+            } else {
+                return $0
+            }
+        }
+    },
+    ButtonActionKey(modifiers: [modKey], button: UInt32(BTN_RIGHT)): { (awc, surface) in
+        // Set to floating and resize with mouse
+        awc.modifyAndUpdate {
+            if let output = $0.findOutput(view: surface) {
+                var box = $0.floating[surface] ?? surface.preferredFloatingBox(awc: awc, output: output)
+                let startBox = box
+
+                let startX = Double(output.data.box.x + box.x + box.width)
+                let startY = Double(output.data.box.y + box.y + box.height)
+
+                awc.dragging = { (time, x, y) in
+                    box.width = max(startBox.width + Int32(x - startX), 24)
+                    box.height = max(startBox.height + Int32(y - startY), 24)
+                    awc.modifyAndUpdate {
+                        $0.float(view: surface, box: box)
+                    }
+                }
+
+                wlr_cursor_warp(awc.cursor, nil, startX, startY)
+
+                return $0.float(view: surface, box: box)
+            } else {
+                return $0
+            }
+        }
+    }]
+}
+
 // MARK: main
 
 func main() {
@@ -1025,7 +1105,8 @@ func main() {
             activeBorderColor: activeBorderColor,
             inactiveBoarderColor: inactiveBorderColor,
             renderSurface
-        )
+        ),
+        buttonActions: defaultButtonActions()
     )
 
     awc.addListener(seat!, SeatListener.newFor(emitter: seat!, handler: awc))
