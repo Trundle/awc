@@ -16,9 +16,14 @@ protocol LayerShell: class {
     func unmap(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>)
 }
 
-let layerShellLayers =
+private let layerShellLayers =
     (ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND.rawValue...ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY.rawValue)
     .map { zwlr_layer_shell_v1_layer(rawValue: $0) }
+
+private let layersAboveShell = [
+    ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY.rawValue,
+    ZWLR_LAYER_SHELL_V1_LAYER_TOP.rawValue
+].map { zwlr_layer_shell_v1_layer(rawValue: $0) }
 
 extension Awc: LayerShell {
     func newSurface(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
@@ -113,6 +118,13 @@ extension Awc: LayerShell {
             layerData.mapped.insert(layerSurface)
             wlr_surface_send_enter(layerSurface.pointee.surface, layerSurface.pointee.output)
             self.updateLayout()
+
+            if layersAboveShell.contains(layerSurface.pointee.current.layer) &&
+                layerSurface.pointee.current.keyboard_interactive
+            {
+                // Theoretically, there could be another interactive layer above this one, but how likely is that?
+                self.focus(focus: .layer(surface: layerSurface))
+            }
         }
     }
 
@@ -120,6 +132,10 @@ extension Awc: LayerShell {
         withLayerData(layerSurface, or: wlr_layer_surface_v1_close(layerSurface)) { layerData in
             layerData.mapped.remove(layerSurface)
             layerData.unmapped.insert(layerSurface)
+            self.updateLayout()
+            if layerSurface.pointee.current.keyboard_interactive {
+                self.focusTop()
+            }
         }
     }
 
@@ -340,8 +356,50 @@ private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandle
                 // Deregister the listener already, as the output goes away
                 listenerPtr.pointee.deregister()
             }
+
+            if let exclusiveClient = awc.exclusiveClient {
+                // Check if the exclusive client is an interactive layer on the destroyed output
+                for layer in layersAboveShell {
+                    if let layerData = data.layers[output]?[layer] {
+                        if layerData.mapped
+                           .filter({ $0.pointee.current.keyboard_interactive })
+                           .contains(where: { wl_resource_get_client($0.pointee.resource) == exclusiveClient })
+                        {
+                            // It is - find another layer by this client that can be focused
+                            if let newSurface =
+                                self.findInteractiveMappedLayerSurfaceBy(client: exclusiveClient, data: data)
+                            {
+                                awc.focus(focus: .layer(surface: newSurface))
+                            }
+                        }
+                    }
+                }
+            }
+
+            data.layers.removeValue(forKey: output)
         }
         wlr_layer_surface_v1_close(self.surface)
+    }
+
+    private func findInteractiveMappedLayerSurfaceBy(
+        client: OpaquePointer,
+        data: LayerShellData
+    ) -> UnsafeMutablePointer<wlr_layer_surface_v1>?
+    {
+        for output in self.awc.viewSet.outputs() {
+            for layer in layersAboveShell {
+                if let layerData = data.layers[output.data.output]?[layer] {
+                    if let surface = layerData
+                        .mapped
+                        .filter({ $0.pointee.current.keyboard_interactive })
+                        .first(where: { wl_resource_get_client($0.pointee.resource) == client })
+                    {
+                        return surface
+                    }
+                }
+            }
+        }
+        return nil
     }
 }
 

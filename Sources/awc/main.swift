@@ -183,6 +183,8 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     var dragging: ((UInt32, Double, Double) -> ())? = nil
     // Additional overlay surfaces, for example Drag and Drop icons
     internal var surfaces: [UnsafeMutablePointer<wlr_surface>: (Double, Double)] = [:]
+    // An exclusive client that receives all input, if there is one (see wlroot's input inhibit protocol)
+    internal var exclusiveClient: OpaquePointer? = nil
 
     init(
         wlEventHandler: WlEventHandler,
@@ -459,7 +461,7 @@ extension Awc {
     private func handleCursorButton(_ event: UnsafeMutablePointer<wlr_event_pointer_button>) {
         if event.pointee.state == WLR_BUTTON_RELEASED && self.dragging != nil {
             self.dragging = nil
-        } else {
+        } else if self.exclusiveClient == nil {
             if let (parent, surface, _, _) = self.viewAt(x: self.cursor.pointee.x, y: self.cursor.pointee.y) {
                 // Focus the surface under cursor if it's different from the current focus
                 switch parent {
@@ -719,23 +721,26 @@ extension Awc {
         _ device: UnsafeMutablePointer<wlr_input_device>,
         _ event: UnsafeMutablePointer<wlr_event_keyboard_key>
     ) {
-        // Translate libinput keycode -> xkbcommon
-        let keycode = event.pointee.keycode + 8
-        // Get a list of keysyms based on the keymap for this keyboard
-        let syms = UnsafeMutablePointer<Optional<UnsafePointer<xkb_keysym_t>>>.allocate(capacity: 1)
-        defer {
-            syms.deallocate()
-        }
-        let nsyms = xkb_state_key_get_syms(device.pointee.keyboard.pointee.xkb_state, keycode, syms)
-
         var handled = false
-        let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device.pointee.keyboard))
-        if event.pointee.state == WLR_KEY_PRESSED {
-            for i in 0..<Int(nsyms) {
-                if let symPtr = syms[i] {
-                    if handleKeyPress(modifiers: modifiers, sym: symPtr.pointee) {
-                        handled = true
-                        break
+
+        if self.exclusiveClient == nil {
+            // Translate libinput keycode -> xkbcommon
+            let keycode = event.pointee.keycode + 8
+            // Get a list of keysyms based on the keymap for this keyboard
+            let syms = UnsafeMutablePointer<Optional<UnsafePointer<xkb_keysym_t>>>.allocate(capacity: 1)
+            defer {
+                syms.deallocate()
+            }
+            let nsyms = xkb_state_key_get_syms(device.pointee.keyboard.pointee.xkb_state, keycode, syms)
+
+            let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device.pointee.keyboard))
+            if event.pointee.state == WLR_KEY_PRESSED {
+                for i in 0..<Int(nsyms) {
+                    if let symPtr = syms[i] {
+                        if handleKeyPress(modifiers: modifiers, sym: symPtr.pointee) {
+                            handled = true
+                            break
+                        }
                     }
                 }
             }
@@ -1117,6 +1122,8 @@ func main() {
     setupXWayland(display: wlDisplay, compositor: compositor!, awc: awc)
 
     wlr_screencopy_manager_v1_create(wlDisplay)
+
+    setUpInputInhibitor(awc: awc)
 
     // Set up decorations: Wayland knows server-side and client-side decorations. We provide server-side decorations.
     setUpDecorations(wlDisplay: wlDisplay, awc: awc)

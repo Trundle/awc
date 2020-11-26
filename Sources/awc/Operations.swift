@@ -4,7 +4,16 @@ import Wlroots
 extension Awc {
     /// Focuses the top window (if there is one)
     func focusTop() {
-        let focus = self.viewSet.current.workspace.stack?.focus
+        self.focus(focus: self.viewSet.current.workspace.stack?.focus)
+    }
+
+    func focus(focus: Surface?) {
+        if let wlrSurface = focus?.wlrSurface, let exclusiveClient = self.exclusiveClient {
+            guard wl_resource_get_client(wlrSurface.pointee.resource) == exclusiveClient else {
+                return
+            }
+        }
+
         if let prevSurface = self.seat.pointee.keyboard_state.focused_surface {
             guard prevSurface != focus?.wlrSurface else {
                 return
