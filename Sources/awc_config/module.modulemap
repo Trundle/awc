@@ -1,0 +1,5 @@
+module awc_config [system] {
+  header "libawc_config.h"
+  link "awc_config"
+  export *
+}

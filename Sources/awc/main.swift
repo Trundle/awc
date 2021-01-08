@@ -137,17 +137,6 @@ public protocol ExtensionDataProvider {
 public typealias RenderSurfaceHook<L: Layout> =
     (UnsafeMutablePointer<wlr_renderer>, Output<L>, Surface, Set<ViewAttribute>, wlr_box) -> ()
 
-// XXX introduce some kind of configuration object instead?
-let borderWidth: Int32 = 2
-let activeBorderColor = float_rgba(r: 0.89, g: 0.773, b: 0.596, a: 1.0)
-let inactiveBorderColor = float_rgba(r: 0.541, g: 0.431, b: 0.392, a: 1.0)
-let modKey: KeyModifiers = .logo
-
-public struct ButtonActionKey: Hashable {
-    let modifiers: KeyModifiers
-    let button: UInt32
-}
-
 public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetails {
     private struct ListenerKey: Hashable {
         let emitter: UnsafeMutableRawPointer
@@ -170,12 +159,9 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
     let renderSurfaceHook: RenderSurfaceHook<L>
-    let buttonActions: [ButtonActionKey: (Awc<L>, Surface) -> ()]
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
-    // The "mod" key to be used for ked bindings, typically logo
-    let mod: KeyModifiers = modKey
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
     private var listeners: [ListenerKey: UnsafeMutableRawPointer] = [:]
     var extensionData: [ObjectIdentifier: Any] = [:]
@@ -185,6 +171,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     internal var surfaces: [UnsafeMutablePointer<wlr_surface>: (Double, Double)] = [:]
     // An exclusive client that receives all input, if there is one (see wlroot's input inhibit protocol)
     internal var exclusiveClient: OpaquePointer? = nil
+    internal var config: Config
 
     init(
         wlEventHandler: WlEventHandler,
@@ -198,7 +185,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         seat: UnsafeMutablePointer<wlr_seat>,
         layout: L,
         renderSurfaceHook: @escaping RenderSurfaceHook<L>,
-        buttonActions: [ButtonActionKey: (Awc<L>, Surface) -> ()]
+        config: Config
     ) {
         let workspace: Workspace<L> = Workspace(
             tag: "1",
@@ -224,7 +211,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.seat = seat
         self.wlEventHandler = wlEventHandler
         self.renderSurfaceHook = renderSurfaceHook
-        self.buttonActions = buttonActions
+        self.config = config
     }
 
     public func run() {
@@ -277,135 +264,6 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
             }
         }
         return nil
-    }
-
-    private func handleKeyPress(modifiers: KeyModifiers, sym: xkb_keysym_t) -> Bool {
-        // XXX This depends on my layout :( :(
-        //let shiftNumbers = [
-        //    XKB_KEY_degree, XKB_KEY_section, 0x1002113, XKB_KEY_guillemotright, XKB_KEY_guillemotleft,
-        //    XKB_KEY_dollar, XKB_KEY_EuroSign, XKB_KEY_doublelowquotemark, XKB_KEY_leftdoublequotemark
-        //]
-        let shiftNumbers = [XKB_KEY_exclam, XKB_KEY_quotedbl, XKB_KEY_section, XKB_KEY_dollar, XKB_KEY_percent,
-                            XKB_KEY_ampersand, XKB_KEY_slash, XKB_KEY_parenleft, XKB_KEY_parenright]
-
-        if sym == XKB_KEY_n && modifiers == [self.mod] {
-            // Move focus to the next surface
-            self.modifyAndUpdate {
-                $0.modify {
-                    $0.focusDown()
-                }
-            }
-            return true
-        } else if sym == XKB_KEY_N && modifiers == [.shift, self.mod] {
-            // Swap the focused surface with the next surface
-            self.modifyAndUpdate {
-                $0.modify { $0.swapDown() }
-            }
-            return true
-        } else if sym == XKB_KEY_r && modifiers == [self.mod] {
-            // Move focus to the previous surface
-            self.modifyAndUpdate {
-                $0.modify {
-                    $0.focusUp()
-                }
-            }
-            return true
-        } else if sym == XKB_KEY_R && modifiers == [.shift, self.mod] {
-            // Swap the focused surface with the previous surface
-            self.modifyAndUpdate {
-                $0.modify { $0.swapUp() }
-            }
-            return true
-        } else if sym == XKB_KEY_Return && modifiers == [self.mod] {
-            // Swap the focused surface and the primary surface
-            self.modifyAndUpdate {
-                $0.modify { $0.swapPrimary() }
-            }
-            return true
-        } else if sym == XKB_KEY_C && modifiers == [.shift, self.mod] {
-            // Close focused surface
-            self.kill()
-            return true
-        } else if sym == XKB_KEY_Return && modifiers == [.shift, self.mod] {
-            // Launch terminal
-            executeCommand("kitty -o linux_display_server=wayland")
-            return true
-        } else if sym >= XKB_KEY_1 && sym <= XKB_KEY_9 && modifiers == [self.mod] {
-            // Switch to workspace n
-            let n = sym - UInt32(XKB_KEY_0)
-            self.modifyAndUpdate {
-                $0.view(tag: "\(n)")
-            }
-            return true
-        } else if shiftNumbers.contains(Int32(sym)) && modifiers == [.shift, self.mod] {
-            // Move focused surface to workspace n
-            let n = 1 + shiftNumbers.firstIndex(of: Int32(sym))!
-            self.modifyAndUpdate {
-                $0.shift(tag: "\(n)")
-            }
-            return true
-        } else if (([XKB_KEY_x, XKB_KEY_v, XKB_KEY_l].contains(Int32(sym)) && modifiers == [self.mod])
-                || ([XKB_KEY_X, XKB_KEY_V, XKB_KEY_L].contains(Int32(sym)) && modifiers == [.shift, self.mod]))
-        {
-            // Focus output n, with shift pressed move focused surface to output n
-            let outputs = self.orderedOutputs()
-            let n = [XKB_KEY_x, XKB_KEY_v, XKB_KEY_l, XKB_KEY_X, XKB_KEY_V, XKB_KEY_L].firstIndex(of: Int32(sym))! % 3
-            if n < outputs.count {
-                let targetTag = outputs[n].workspace.tag
-                self.modifyAndUpdate {
-                    if modifiers.contains(.shift) {
-                        return $0.shift(tag: targetTag)
-                    } else {
-                        return $0.view(tag: targetTag)
-                    }
-                }
-            }
-            return true
-        } else if sym == XKB_KEY_space && modifiers == [self.mod] {
-            // Switch to next layout
-            let layout =  self.viewSet.current.workspace.layout
-            let nextLayout = layout.nextLayout() ?? layout.firstLayout()
-            self.modifyAndUpdate {
-                $0.replace(current: $0.current.copy(workspace: $0.current.workspace.replace(layout: nextLayout)))
-            }
-            return true
-        } else if sym == XKB_KEY_t && modifiers == [self.mod] {
-            // Push surface back into tiling
-            self.withFocused { surface in
-                self.modifyAndUpdate {
-                    $0.sink(view: surface)
-                }
-            }
-            return true
-        } else if sym == XKB_KEY_e && modifiers == [self.mod] {
-            executeCommand("j4-dmenu-desktop --dmenu=whisker-menu")
-            return true
-        } else if sym >= XKB_KEY_XF86Switch_VT_1 && sym <= XKB_KEY_XF86Switch_VT_12 {
-            let n = sym - UInt32(XKB_KEY_XF86Switch_VT_1) + 1
-            if let session = wlr_backend_get_session(self.backend) {
-                wlr_session_change_vt(session, n)
-            }
-            return true
-        } else if sym == XKB_KEY_s && modifiers == [self.mod] {
-             // Swap workspaces on primary and secondary output
-            self.modifyAndUpdate {
-                if let firstVisible = $0.visible.first {
-                    return $0.replace(
-                        current: $0.current.copy(workspace: firstVisible.workspace),
-                        visible: [firstVisible.copy(workspace: $0.current.workspace)] + $0.visible[1...],
-                        hidden: $0.hidden
-                    )
-                } else {
-                    return $0
-                }
-            }
-            return true
-        } else if sym == XKB_KEY_m && modifiers == [self.mod] {
-            // Focus main window
-            self.modifyAndUpdate { $0.focusMain() }
-            return true
-        }
-        return false
     }
 
     func shouldFloat(surface: Surface) -> Bool {
@@ -482,9 +340,8 @@ extension Awc {
 
                 if let keyboard = self.seat.pointee.keyboard_state.keyboard {
                     let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(keyboard))
-                    let key = ButtonActionKey(modifiers: modifiers, button: event.pointee.button)
-                    if let action = self.buttonActions[key] {
-                        action(self, parent)
+                    if let action = self.config.findButtonBinding(modifiers: modifiers, button: event.pointee.button) {
+                        execute(action: action, surface: parent)
                     }
                 }
             }
@@ -550,8 +407,9 @@ extension Awc {
     private func handleNewInput(_ device: UnsafeMutablePointer<wlr_input_device>) {
         if device.pointee.type == WLR_INPUT_DEVICE_KEYBOARD {
             let context = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
-            let keymap: OpaquePointer = "de(nodeadkeys),de(neo)".withCString { layoutPtr in
-                "compose:rctrl,grp:alts_toggle".withCString { optionsPtr in
+	        let layout = self.config.configureKeyboard(vendor: device.pointee.vendor)
+            let keymap: OpaquePointer = layout.withCString { layoutPtr in
+                "compose:rctrl".withCString { optionsPtr in
                     var rules = xkb_rule_names()
                     rules.layout = layoutPtr
                     rules.options = optionsPtr
@@ -612,10 +470,8 @@ extension Awc {
         // display, which Wayland clients can see to find out information about the
         // output (such as DPI, scale factor, manufacturer, etc).
         let name = toString(array: wlrOutput.pointee.name)
-        if name == "eDP-1" {
-           wlr_output_layout_add(self.outputLayout, wlrOutput, 0, 0)
-        } else if name == "DP-5" {
-            wlr_output_layout_add(self.outputLayout, wlrOutput, 1920, 0)
+        if let (x, y) = self.config.outputConfigs[name] {
+            wlr_output_layout_add(self.outputLayout, wlrOutput, x, y)
         } else {
             wlr_output_layout_add_auto(self.outputLayout, wlrOutput)
         }
@@ -736,11 +592,14 @@ extension Awc {
             let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device.pointee.keyboard))
             if event.pointee.state == WLR_KEY_PRESSED {
                 for i in 0..<Int(nsyms) {
-                    if let symPtr = syms[i] {
-                        if handleKeyPress(modifiers: modifiers, sym: symPtr.pointee) {
-                            handled = true
-                            break
-                        }
+                    if let action = self.config.findKeyBinding(
+                        modifiers: modifiers,
+                        code: keycode,
+                        sym: syms[i]!.pointee
+                    ) {
+                        execute(action: action)
+                        handled = true
+                        break
                     }
                 }
             }
@@ -930,70 +789,6 @@ extension Awc: OutputDamage {
     }
 }
 
-// MARK: button actions
-
-private func setWithinBounds(_ box: inout wlr_box, x: Int32, y: Int32, bounds: wlr_box) {
-    box.x = min(max(x, bounds.x), bounds.x + bounds.width - box.width)
-    box.y = min(max(y, bounds.y), bounds.y + bounds.height - box.height)
-}
-
-func defaultButtonActions<L: Layout>() -> [ButtonActionKey: (Awc<L>, Surface) -> ()] {
-    [ButtonActionKey(modifiers: [modKey], button: UInt32(BTN_LEFT)): { (awc, surface) in
-        // Set to floating and move with mouse
-        awc.modifyAndUpdate {
-            if let output = $0.findOutput(view: surface) {
-                var box = $0.floating[surface] ?? surface.preferredFloatingBox(awc: awc, output: output)
-                let startBox = box
-
-                let startX = awc.cursor.pointee.x
-                let startY = awc.cursor.pointee.y
-                awc.dragging = { (time, x, y) in
-                    setWithinBounds(
-                        &box,
-                        x: startBox.x + Int32(x - startX),
-                        y: startBox.y + Int32(y - startY),
-                        bounds: output.data.box
-                    )
-
-                    awc.modifyAndUpdate {
-                        $0.float(view: surface, box: box)
-                    }
-                }
-
-                return $0.float(view: surface, box: box)
-            } else {
-                return $0
-            }
-        }
-    },
-    ButtonActionKey(modifiers: [modKey], button: UInt32(BTN_RIGHT)): { (awc, surface) in
-        // Set to floating and resize with mouse
-        awc.modifyAndUpdate {
-            if let output = $0.findOutput(view: surface) {
-                var box = $0.floating[surface] ?? surface.preferredFloatingBox(awc: awc, output: output)
-                let startBox = box
-
-                let startX = Double(output.data.box.x + box.x + box.width)
-                let startY = Double(output.data.box.y + box.y + box.height)
-
-                awc.dragging = { (time, x, y) in
-                    box.width = max(startBox.width + Int32(x - startX), 24)
-                    box.height = max(startBox.height + Int32(y - startY), 24)
-                    awc.modifyAndUpdate {
-                        $0.float(view: surface, box: box)
-                    }
-                }
-
-                wlr_cursor_warp(awc.cursor, nil, startX, startY)
-
-                return $0.float(view: surface, box: box)
-            } else {
-                return $0
-            }
-        }
-    }]
-}
-
 // MARK: main
 
 func main() {
@@ -1091,9 +886,14 @@ func main() {
 
     wlr_gamma_control_manager_v1_create(wlDisplay)
 
+    guard let config = loadConfig() else {
+        print("[FATAL] Could not load configuration")
+        return
+    }
+
     let full = Full<Surface, OutputDetails>()
     let layouts = full ||| TwoPane() ||| Rotated(layout: TwoPane())
-    let layout = LayerLayout(wrapped: BorderShrinkLayout(borderWidth: borderWidth, layout: layouts))
+    let layout = LayerLayout(wrapped: BorderShrinkLayout(borderWidth: config.borderWidth, layout: layouts))
     let awc = Awc(
         wlEventHandler: wlEventHandler,
         wlDisplay: wlDisplay,
@@ -1106,12 +906,12 @@ func main() {
         seat: seat!,
         layout: layout,
         renderSurfaceHook: smartBorders(
-            borderWidth: borderWidth,
-            activeBorderColor: activeBorderColor,
-            inactiveBoarderColor: inactiveBorderColor,
+            borderWidth: config.borderWidth,
+            activeBorderColor: config.activeBorderColor,
+            inactiveBorderColor: config.inactiveBorderColor,
             renderSurface
         ),
-        buttonActions: defaultButtonActions()
+        config: config
     )
 
     awc.addListener(seat!, SeatListener.newFor(emitter: seat!, handler: awc))

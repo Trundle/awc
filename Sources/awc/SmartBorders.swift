@@ -11,10 +11,10 @@ final class BorderShrinkLayout<Wrapped: Layout>: Layout {
     public typealias View = Wrapped.View
     public typealias OutputData = Wrapped.OutputData
 
-    private let borderWidth: Int32
+    private let borderWidth: UInt32
     private let layout: Wrapped
 
-    init(borderWidth: Int32, layout: Wrapped) {
+    init(borderWidth: UInt32, layout: Wrapped) {
         self.borderWidth = borderWidth
         self.layout = layout
     }
@@ -35,7 +35,7 @@ final class BorderShrinkLayout<Wrapped: Layout>: Layout {
     ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where Wrapped.View == L.View, Wrapped.OutputData == L.OutputData {
         let arrangement = self.layout.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
         if arrangement.filter({ $0.1.isDisjoint(with: undecoratedAttributes) }).count > 1 {
-            return arrangement.map { ($0.0, $0.1, $0.2.shrink(by: self.borderWidth)) }
+            return arrangement.map { ($0.0, $0.1, $0.2.shrink(by: Int32(self.borderWidth))) }
         } else {
             return arrangement.map {
                 var attributes = $0.1
@@ -59,9 +59,9 @@ final class BorderShrinkLayout<Wrapped: Layout>: Layout {
 }
 
 public func smartBorders<L: Layout>(
-    borderWidth: Int32,
+    borderWidth: UInt32,
     activeBorderColor: float_rgba,
-    inactiveBoarderColor: float_rgba,
+    inactiveBorderColor: float_rgba,
     _ renderHook: @escaping RenderSurfaceHook<L>
 ) -> RenderSurfaceHook<L>
     where L.OutputData == OutputDetails
@@ -70,7 +70,7 @@ public func smartBorders<L: Layout>(
         if attributes.isDisjoint(with: undecoratedAttributes) {
             let color = attributes.contains(.focused) ? activeBorderColor : inactiveBorderColor
             drawBorder(
-                renderer: renderer, output: output.data.output, box: box, width: borderWidth, color: color
+                renderer: renderer, output: output.data.output, box: box, width: Int32(borderWidth), color: color
             )
         }
 

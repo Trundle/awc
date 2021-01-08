@@ -31,9 +31,16 @@ Sources/Wlroots/xdg-shell-protocol.c: Sources/Wlroots/xdg-shell-protocol.h
 Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h:
 	$(WAYLAND_SCANNER) server-header Sources/Wlroots/protocols/wlr-layer-shell-unstable-v1.xml $@
 
-awc: Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h
+Sources/awc_config/libawc_config.so: Sources/awc_config/libawcconfig.go
+	cd Sources/awc_config && go generate
+	cd Sources/awc_config && go build -buildmode=c-shared -o libawc_config.so libawcconfig.go *.generated.go
+
+awc: Sources/awc_config/libawc_config.so Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h
 	swift build \
 	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
+		-Xcc -ISources/awc_config \
+		-Xlinker -LSources/awc_config \
+		-Xlinker -lawc_config -Xlinker -rpath -Xlinker `pwd`/Sources/awc_config \
 		-Xcc -DWLR_USE_UNSTABLE \
 		-Xcc -ISources/Wlroots \
 		$(shell echo "$(LIBS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xlinker {} ")
@@ -41,12 +48,15 @@ awc: Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c S
 test: awc
 	swift test \
 	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
+		-Xlinker -LSources/awc_config \
+		-Xlinker -lawc_config -Xlinker -rpath -Xlinker `pwd`/Sources/awc_config \
 		-Xcc -DWLR_USE_UNSTABLE \
 		-Xcc -ISources/Wlroots \
 		$(shell echo "$(LIBS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xlinker {} ")
 
 clean:
 	rm -f Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c
+	rm -f Sources/awc_config/*.so Sources/awc_config/*.generated.go
 	rm -Rf .build
 
 .DEFAULT_GOAL=awc

@@ -85,6 +85,7 @@ extension Awc {
     func updateLayout() {
         for output in self.viewSet.outputs() {
             // XXX encapsulate?
+            let borderWidth = Int32(self.config.borderWidth)
             var outputLayoutBox = output.data.box
             outputLayoutBox.x += borderWidth
             outputLayoutBox.y += borderWidth
