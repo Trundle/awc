@@ -63,6 +63,27 @@ means that quite a few tools work with Awc as well, such as `grim
 <https://github.com/Alexays/Waybar>`_.
 
 
+How to build
+============
+
+Install the following dependencies and then run ``make``.
+
+Dependencies
+------------
+
+* Go
+* Swift 5.3 (or newer)
+* GLESv2
+* libinput
+* pixman
+* pkg-config
+* wayland
+* wayland-protocols
+* wlroots (0.11 or newer)
+* xcb
+* xkbcommon
+
+
 Alternatives
 ============
 
