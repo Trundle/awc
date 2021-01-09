@@ -77,6 +77,22 @@ are listed a few (without any claim to completeness):
 GNOME and KDE also work well with Wayland.
 
 
+License
+=======
+
+Awc is released under the Apache License, Version 2.0. See ``LICENSE``
+or http://www.apache.org/licenses/LICENSE-2.0.html for details.
+
+Design-wise, Awc is heavily inspired by XMonad_ (e.g. zippers, layouts), which
+is::
+
+   Copyright (c) 2007,2008 Spencer Janssen
+   Copyright (c) 2007,2008 Don Stewart
+
+and released under `a BSD license
+<https://github.com/xmonad/xmonad/blob/master/LICENSE>`_.
+
+
 .. _Sway: https://swaywm.org/
 .. _wlroots: https://github.com/swaywm/wlroots
 .. _XMonad: https://xmonad.org/
