@@ -14,7 +14,7 @@ public final class ConfigTests: XCTestCase {
     func testButtonBinding() {
         withConfig("button_binding") {
             XCTAssertEqual($0.numberOfButtonBindings, 1)
-            XCTAssertEqual($0.buttonBindings[0].mods, 8)
+            XCTAssertEqual($0.buttonBindings[0].mods, 9)
         }
     }
 

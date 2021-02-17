@@ -139,7 +139,7 @@ func loadConfig() -> Config? {
     var buttonBindings: [ButtonActionKey: ButtonAction] = [:]
     for i in 0..<config.numberOfButtonBindings {
         let actionKey = ButtonActionKey(
-            modifiers: KeyModifiers(rawValue: config.keyBindings[i].mods),
+            modifiers: KeyModifiers(rawValue: config.buttonBindings[i].mods),
             button: toButton(config.buttonBindings[i].button)
         )
         buttonBindings[actionKey] = toButtonAction(&config.buttonBindings[i].action)
