@@ -74,6 +74,51 @@ extension UnsafeMutablePointer where Pointee == wlr_surface {
     }
 }
 
+
+struct WlListIterator<T>: IteratorProtocol {
+    private let start: UnsafePointer<wl_list>
+    private var current: UnsafeMutablePointer<T>
+    private let path: WritableKeyPath<T, wl_list>
+    private var exhausted: Bool = false
+
+    init(_ start: UnsafePointer<wl_list>, _ path: WritableKeyPath<T, wl_list>) {
+        self.start = start
+        self.current = wlContainer(of: UnsafeMutableRawPointer(start.pointee.next), path)
+        self.path = path
+    }
+
+    mutating func next() -> UnsafeMutablePointer<T>? {
+        guard !exhausted else { return nil }
+
+        if withUnsafePointer(to: &current.pointee[keyPath: path], { $0 != start }) {
+            defer {
+                current = wlContainer(
+                    of: UnsafeMutableRawPointer(current.pointee[keyPath: path].next),
+                    path
+                )
+            }
+            return current
+        } else {
+            exhausted = true
+            return nil
+        }
+    }
+}
+
+struct WlListSequence<T>: Sequence {
+    private let list: UnsafeMutablePointer<wl_list>
+    private let path: WritableKeyPath<T, wl_list>
+
+    init(_ list: UnsafeMutablePointer<wl_list>, _ path: WritableKeyPath<T, wl_list>) {
+        self.list = list
+        self.path = path
+    }
+
+    func makeIterator() -> WlListIterator<T> {
+        return WlListIterator(list, path)
+    }
+}
+
 extension wl_list {
     /// Returns whether the given predicate holds for some element. Doesn't mutate the list, even though the method
     /// is marked as mutating.
@@ -86,6 +131,10 @@ extension wl_list {
             pos = wlContainer(of: UnsafeMutableRawPointer(pos.pointee[keyPath: path].next), path)
         }
         return false
+    }
+
+    mutating func sequence<T>(_ path: WritableKeyPath<T, wl_list>) -> WlListSequence<T> {
+        return WlListSequence(&self, path)
     }
 }
 

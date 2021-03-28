@@ -27,6 +27,7 @@ protocol XdgPopup: class {
 protocol Subsurface: class {
     func commit(subsurface: UnsafeMutablePointer<wlr_subsurface>)
     func destroy(subsurface: UnsafeMutablePointer<wlr_subsurface>)
+    func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>)
 }
 
 /// Signal listeners for XDG Shell.
@@ -159,6 +160,7 @@ struct SubsurfaceListener: PListener {
     weak var handler: Subsurface?
     private var commit: wl_listener = wl_listener()
     private var destroy: wl_listener = wl_listener()
+    private var newSubsurface: wl_listener = wl_listener()
 
     mutating func listen(to subsurface: UnsafeMutablePointer<wlr_subsurface>) {
         Self.add(signal: &subsurface.pointee.surface.pointee.events.commit, listener: &self.commit) {
@@ -175,11 +177,17 @@ struct SubsurfaceListener: PListener {
         Self.add(signal: &subsurface.pointee.events.destroy, listener: &self.destroy) { (listener, data) in
             Self.handle(from: listener!, data: data!, \Self.destroy, { $0.destroy(subsurface: $1) })
         }
+
+        Self.add(signal: &subsurface.pointee.surface.pointee.events.new_subsurface, listener: &self.newSubsurface) {
+            (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.newSubsurface, { $0.newSubsurface(subsurface: $1) })
+        }
     }
 
     mutating func deregister() {
         wl_list_remove(&self.commit.link)
         wl_list_remove(&self.destroy.link)
+        wl_list_remove(&self.newSubsurface.link)
     }
 }
 
@@ -222,8 +230,16 @@ extension Awc: XdgShell {
 extension Awc: XdgSurface {
     internal func map(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
         let surface = Surface.xdg(surface: xdgSurface)
+
         if self.unmapped.remove(surface) != nil {
             self.addListener(xdgSurface, XdgMappedSurfaceListener.newFor(emitter: xdgSurface, handler: self))
+
+            if let wlrSurface = xdgSurface.pointee.surface {
+                for subsurface in wlrSurface.pointee.subsurfaces.sequence(\wlr_subsurface.parent_link) {
+                    newSubsurface(subsurface: subsurface)
+                }
+            }
+
             self.manage(surface: surface)
         }
     }
@@ -263,6 +279,12 @@ extension Awc: XdgMappedSurface {
 
     func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>) {
         self.addListener(subsurface, SubsurfaceListener.newFor(emitter: subsurface, handler: self))
+
+        if let wlrSurface = subsurface.pointee.surface {
+            for childSubsurface in wlrSurface.pointee.subsurfaces.sequence(\wlr_subsurface.parent_link) {
+                newSubsurface(subsurface: childSubsurface)
+            }
+        }
     }
 }
 
