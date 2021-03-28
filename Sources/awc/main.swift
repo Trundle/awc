@@ -712,7 +712,12 @@ extension Awc: OutputDamage {
         }
 
         var needsFrame = false
-        guard wlr_output_damage_attach_render(output.data.damage, &needsFrame, &bufferDamage) && needsFrame else {
+        guard wlr_output_damage_attach_render(output.data.damage, &needsFrame, &bufferDamage) else {
+            return
+        }
+
+        guard needsFrame else {
+            wlr_output_rollback(wlrOutput)
             return
         }
 
