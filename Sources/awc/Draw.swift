@@ -43,7 +43,9 @@ private func drawBox(
     box: UnsafePointer<wlr_box>,
     color: UnsafePointer<Float>
 ) {
-    withUnsafePointer(to: &output.pointee.transform_matrix.0) { (outputTransformMatrixPtr) in
-        wlr_render_rect(renderer, box, color, outputTransformMatrixPtr)
+    withUnsafePointer(to: box.pointee.scale(Double(output.pointee.scale))) { (scaledBox) in
+        withUnsafePointer(to: &output.pointee.transform_matrix.0) { (outputTransformMatrixPtr) in
+            wlr_render_rect(renderer, scaledBox, color, outputTransformMatrixPtr)
+        }
     }
 }

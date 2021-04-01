@@ -15,6 +15,7 @@ struct AwcOutputConfig {
    char *name;
    int x;
    int y;
+   float scale;
 };
 
 struct AwcAction {
@@ -164,6 +165,7 @@ type Config struct {
 		Name string `dhall:"name"`
 		X int `dhall:"x"`
 		Y int `dhall:"y"`
+		Scale float64 `dhall:"scale"`
 	} `dhall:"outputs"`
 	ButtonBindings []ButtonBinding `dhall:"buttonBindings"`
 	KeyBindings []KeyBinding `dhall:"keyBindings"`
@@ -354,6 +356,7 @@ func awcLoadConfig(path C.const_char_p, result *C.struct_AwcConfig) *C.char {
 		outputs[i].name = C.CString(output.Name)
 		outputs[i].x = C.int(output.X)
 		outputs[i].y = C.int(output.Y)
+		outputs[i].scale = C.float(output.Scale)
 	}
 	result.numberOfOutputs = C.size_t(len(config.Outputs))
 

@@ -64,7 +64,7 @@ class Config {
     let borderWidth: UInt32
     let activeBorderColor: float_rgba
     let inactiveBorderColor: float_rgba
-    let outputConfigs: [String: (Int32, Int32)]
+    let outputConfigs: [String: (Int32, Int32, Float)]
     private let buttonBindings: [ButtonActionKey: ButtonAction]
     private let keyBindings: [KeyActionKey: Action]
     fileprivate let token: UnsafeMutableRawPointer
@@ -80,7 +80,7 @@ class Config {
         inactiveBorderColor: float_rgba,
         buttonBindings: [ButtonActionKey: ButtonAction],
         keyBindings: [KeyActionKey: Action],
-        outputConfigs: [String: (Int32, Int32)]
+        outputConfigs: [String: (Int32, Int32, Float)]
     ) {
         self.token = token
         self.borderWidth = borderWidth
@@ -166,9 +166,11 @@ func loadConfig() -> Config? {
         keyBindings[actionKey] = toAction(&config.keyBindings[i].action)
     }
 
-    var outputConfigs: [String: (Int32, Int32)] = [:]
+    var outputConfigs: [String: (Int32, Int32, Float)] = [:]
     for i in 0..<config.numberOfOutputs {
-        outputConfigs[String(cString: config.outputs[i].name)] = (config.outputs[i].x, config.outputs[i].y)
+        let scale: Float = config.outputs[i].scale
+        outputConfigs[String(cString: config.outputs[i].name)] =
+            (config.outputs[i].x, config.outputs[i].y, scale)
     }
 
     return Config(

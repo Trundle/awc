@@ -39,7 +39,8 @@ let Config =
           , activeBorderColor : Color
           , inactiveBorderColor : Color
           , configureKeyboard : ∀(vendor : Natural) → { layout : Text }
-          , outputs : List { name : Text, x : Integer, y : Integer }
+          , outputs :
+              List { name : Text, x : Integer, y : Integer, scale : Double }
           , shouldFloat : ∀(appId : Text) → Bool
           , buttonBindings : List ButtonBinding
           , keyBindings : List KeyBinding
@@ -50,7 +51,8 @@ let Config =
         , activeBorderColor = { r = 0xe3, g = 0xc5, b = 0x98, a = 0xff }
         , inactiveBorderColor = { r = 0x8a, g = 0x6e, b = 0x64, a = 0xff }
         , configureKeyboard = λ(vendor : Natural) → { layout = "de" }
-        , outputs = [] : List { name : Text, x : Integer, y : Integer }
+        , outputs =
+            [] : List { name : Text, x : Integer, y : Integer, scale : Double }
         , shouldFloat = λ(_ : Text) → False
         , buttonBindings = [] : List ButtonBinding
         , keyBindings = [] : List KeyBinding

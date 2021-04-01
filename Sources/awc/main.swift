@@ -39,6 +39,17 @@ extension wlr_box {
     func contains(x: Int, y: Int) -> Bool {
         self.x <= x && x < self.x + self.width && self.y <= y && y < self.y + self.height
     }
+
+    func scale(_ factor: Double) -> wlr_box {
+        let scaledX = Double(self.x) * factor
+        let scaledY = Double(self.y) * factor
+        return wlr_box(
+           x: Int32(round(scaledX)),
+           y: Int32(round(scaledY)),
+           width: Int32(round(Double(self.x + self.width) * factor - scaledX)),
+           height: Int32(round(Double(self.y + self.height) * factor - scaledY))
+        )
+    }
 }
 
 extension UnsafeMutablePointer where Pointee == wlr_surface {
@@ -495,12 +506,17 @@ extension Awc {
     }
 
     private func handleNewOutput(_ wlrOutput: UnsafeMutablePointer<wlr_output>) {
+        let name = toString(array: wlrOutput.pointee.name)
+
         // Some backends don't have modes. DRM+KMS does, and we need to set a mode
         // before we can use the output. The mode is a tuple of (width, height,
         // refresh rate), and each monitor supports only a specific set of modes. We
         // just pick the monitor's preferred mode, a more sophisticated compositor
         // would let the user configure it.
         if wl_list_empty(&wlrOutput.pointee.modes) == 0 {
+            if let (_, _, scale) = self.config.outputConfigs[name] {
+                wlr_output_set_scale(wlrOutput, scale)
+            }
             let mode = wlr_output_preferred_mode(wlrOutput)
             wlr_output_set_mode(wlrOutput, mode)
             wlr_output_enable(wlrOutput, true)
@@ -518,8 +534,7 @@ extension Awc {
         // The output layout utility automatically adds a wl_output global to the
         // display, which Wayland clients can see to find out information about the
         // output (such as DPI, scale factor, manufacturer, etc).
-        let name = toString(array: wlrOutput.pointee.name)
-        if let (x, y) = self.config.outputConfigs[name] {
+        if let (x, y, _) = self.config.outputConfigs[name] {
             wlr_output_layout_add(self.outputLayout, wlrOutput, x, y)
         } else {
             wlr_output_layout_add_auto(self.outputLayout, wlrOutput)
@@ -770,12 +785,8 @@ extension Awc: OutputDamage {
             return
         }
 
-        // The "effective" resolution can change if one rotates the outputs
-        var width: Int32 = 0
-        var height: Int32 = 0
-        wlr_output_effective_resolution(wlrOutput, &width, &height)
         // Begin the rendering (calls glViewport and some other GL sanity checks)
-        wlr_renderer_begin(self.renderer, width, height)
+        wlr_renderer_begin(self.renderer, wlrOutput.pointee.width, wlrOutput.pointee.height)
 
         var color = float_rgba(r: 0.3, g: 0.3, b: 0.3, a: 1.0)
         color.withPtr { wlr_renderer_clear(self.renderer, $0) }

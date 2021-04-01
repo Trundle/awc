@@ -22,11 +22,11 @@ internal func renderSurface(
     // part of the puzzle, AWC does not fully support HiDPI.
     let scale = Double(output.pointee.scale)
     var box = wlr_box(
-        x: Int32(Double(px + sx) * scale),
-        y: Int32(Double(py + sy) * scale),
-        width: Int32(Double(surface.pointee.current.width) * scale),
-        height: Int32(Double(surface.pointee.current.height) * scale)
-    )
+        x: px + sx,
+        y: py + sy,
+        width: surface.pointee.current.width,
+        height: surface.pointee.current.height
+    ).scale(scale)
 
     // Those familiar with OpenGL are also familiar with the role of matrices
     // in graphics programming. We need to prepare a matrix to render the view
