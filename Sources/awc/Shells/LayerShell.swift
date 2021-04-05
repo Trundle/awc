@@ -16,6 +16,55 @@ protocol LayerShell: class {
     func unmap(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>)
 }
 
+protocol MappedLayerSurface: class {
+    func newLayerPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>)
+}
+
+protocol LayerShellPopup: class {
+    func commit(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
+    func map(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
+}
+
+/// Signal listeners for a mapped layer
+struct MappedLayerListener: PListener {
+    weak var handler: MappedLayerSurface?
+    private var newPopup: wl_listener = wl_listener()
+
+    internal mutating func listen(to layer: UnsafeMutablePointer<wlr_layer_surface_v1>) {
+        Self.add(signal: &layer.pointee.events.new_popup, listener: &self.newPopup) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.newPopup, { $0.newLayerPopup(popup: $1) } )
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.newPopup.link)
+    }
+}
+
+struct LayerShellPopupListener: PListener {
+    weak var handler: LayerShellPopup?
+    private var commit: wl_listener = wl_listener()
+    private var map: wl_listener = wl_listener()
+
+    mutating func listen(to popup: UnsafeMutablePointer<wlr_xdg_popup>) {
+        Self.add(signal: &popup.pointee.base.pointee.surface.pointee.events.commit, listener: &self.commit) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.commit, { (handler, surface: UnsafeMutablePointer<wlr_surface>) in
+                if let xdgSurface = wlr_xdg_surface_from_wlr_surface(surface) {
+                    handler.commit(layerPopupSurface: xdgSurface)
+                }
+            })
+        }
+
+        Self.add(signal: &popup.pointee.base.pointee.events.map, listener: &self.map) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.map, { $0.map(layerPopupSurface: $1) })
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.map.link)
+    }
+}
+
 private let layerShellLayers =
     (ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND.rawValue...ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY.rawValue)
     .map { zwlr_layer_shell_v1_layer(rawValue: $0) }
@@ -27,7 +76,6 @@ private let layersAboveShell = [
 
 extension Awc: LayerShell {
     func newSurface(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
-        // XXX handle popups as well
         guard let layerShellData: LayerShellData = self.getExtensionData() else {
             wlr_layer_surface_v1_close(layerSurface)
             return
@@ -105,7 +153,7 @@ extension Awc: LayerShell {
 
         withLayerData(layerSurface, or: ()) { layerData in
             if let box = layerData.boxes[layerSurface],
-                let output = self.viewSet.outputs().first(where: { $0.data.output == layerSurface.pointee.output })
+                let output = findOutput(for: layerSurface)
             {
                 self.damage(output: output, layerSurface: layerSurface, box: box)
             }
@@ -125,6 +173,8 @@ extension Awc: LayerShell {
                 // Theoretically, there could be another interactive layer above this one, but how likely is that?
                 self.focus(focus: .layer(surface: layerSurface))
             }
+
+            self.addListener(layerSurface, MappedLayerListener.newFor(emitter: layerSurface, handler: self))
         }
     }
 
@@ -330,6 +380,74 @@ extension Awc: LayerShell {
             block(layerShellData, layerData)
         } else {
             or()
+        }
+    }
+
+    fileprivate func findOutput(for layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) -> Output<L>? {
+        self.viewSet.outputs().first(where: { $0.data.output == layerSurface.pointee.output })
+    }
+}
+
+extension Awc: MappedLayerSurface {
+    func newLayerPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>) {
+        let parentSurface = parentToplevel(of: popup)
+        withLayerData(parentSurface, or: ()) { layerData in
+            if let parentBox = layerData.boxes[parentSurface],
+               let output = self.findOutput(for: parentSurface)
+            {
+                let outputBox = output.data.box
+
+                var toplevelSxBox = wlr_box(
+                  x: -parentBox.x,
+                  y: -parentBox.y,
+                  width: outputBox.width,
+                  height: outputBox.height
+                )
+                wlr_xdg_popup_unconstrain_from_box(popup, &toplevelSxBox)
+            }
+        }
+        self.addListener(popup, LayerShellPopupListener.newFor(emitter: popup, handler: self))
+    }
+
+    private func parentToplevel(
+      of popup: UnsafeMutablePointer<wlr_xdg_popup>
+    ) -> UnsafeMutablePointer<wlr_layer_surface_v1> {
+        assert(wlr_surface_is_layer_surface(popup.pointee.parent))
+        // If we support popups of popups at some point, this isn't good enough
+        return wlr_layer_surface_v1_from_wlr_surface(popup.pointee.parent)!
+    }
+}
+
+extension Awc: LayerShellPopup {
+    func commit(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        damageWhole(popup: layerPopupSurface.pointee.popup)
+    }
+
+    func map(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        let parentSurface = parentToplevel(of: layerPopupSurface.pointee.popup)
+        wlr_surface_send_enter(layerPopupSurface.pointee.surface, parentSurface.pointee.output)
+        damageWhole(popup: layerPopupSurface.pointee.popup)
+    }
+
+
+    private func damageWhole(popup: UnsafeMutablePointer<wlr_xdg_popup>) {
+        let parentSurface = parentToplevel(of: popup)
+        withLayerData(parentSurface, or: ()) { layerData in
+            if let box = layerData.boxes[parentSurface],
+               let output = findOutput(for: parentSurface)
+            {
+                let surface = popup.pointee.base.pointee.surface
+                let popupSx = popup.pointee.geometry.x - popup.pointee.base.pointee.geometry.x
+                let popupSy = popup.pointee.geometry.y - popup.pointee.base.pointee.geometry.y
+
+                var damage = pixman_region32_t()
+                defer {
+                    pixman_region32_fini(&damage)
+                }
+                wlr_surface_get_effective_damage(surface, &damage)
+                pixman_region32_translate(&damage, box.x + popupSx, box.y + popupSy)
+                wlr_output_damage_add(output.data.damage, &damage)
+            }
         }
     }
 }
@@ -578,6 +696,51 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
             }
         }
     }
+}
+
+
+extension UnsafeMutablePointer where Pointee == wlr_surface {
+    func isXdgPopup() -> Bool {
+        if wlr_surface_is_xdg_surface(self) {
+            let xdgSurface = wlr_xdg_surface_from_wlr_surface(self)!
+            return xdgSurface.pointee.role == WLR_XDG_SURFACE_ROLE_POPUP
+        }
+        return false
+    }
+}
+
+
+func layerViewAt<L: Layout>(
+  delegate: ViewAtHook<L>,
+  awc: Awc<L>,
+  x: Double,
+  y: Double
+) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
+{
+    if let data: LayerShellData = awc.getExtensionData() {
+        if let output = awc.viewSet.outputs().first(where: { $0.data.box.contains(x: Int(x), y: Int(y)) }),
+           let layers = data.layers[output.data.output]?.values
+        {
+            let outputBox = output.data.box
+            let outputX = x - Double(outputBox.x)
+            let outputY = y - Double(outputBox.y)
+            for layer in layers {
+                for (layerSurface, box) in layer.boxes {
+                    let sx = outputX - Double(box.x)
+                    let sy = outputY - Double(box.y)
+                    var subX: Double = 0
+                    var subY: Double = 0
+                    if let childSurface = wlr_layer_surface_v1_surface_at(layerSurface, sx, sy, &subX, &subY),
+                       childSurface.isXdgPopup()
+                    {
+                        return (Surface.layer(surface: layerSurface), childSurface, subX, subY)
+                    }
+                }
+            }
+        }
+    }
+
+    return delegate(awc, x, y)
 }
 
 func setupLayerShell<L: Layout>(display: OpaquePointer, awc: Awc<L>) {

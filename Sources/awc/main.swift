@@ -197,6 +197,20 @@ public protocol ExtensionDataProvider {
 public typealias RenderSurfaceHook<L: Layout> =
     (UnsafeMutablePointer<wlr_renderer>, Output<L>, Surface, Set<ViewAttribute>, wlr_box) -> ()
 
+public typealias ViewAtHook<L: Layout> =
+    (Awc<L>, Double, Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
+    where L.OutputData == OutputDetails, L.View == Surface
+
+public func defaultViewAtHook<L: Layout>(
+  awc: Awc<L>,
+  x: Double,
+  y: Double
+) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
+  where L.OutputData == OutputDetails
+{
+    awc.viewAt(x: x, y: y)
+}
+
 public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetails {
     private struct ListenerKey: Hashable {
         let emitter: UnsafeMutableRawPointer
@@ -219,6 +233,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
     let renderSurfaceHook: RenderSurfaceHook<L>
+    let viewAtHook: ViewAtHook<L>
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
@@ -245,6 +260,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         seat: UnsafeMutablePointer<wlr_seat>,
         layout: L,
         renderSurfaceHook: @escaping RenderSurfaceHook<L>,
+        viewAtHook: @escaping ViewAtHook<L>,
         config: Config
     ) {
         let workspace: Workspace<L> = Workspace(
@@ -271,6 +287,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.seat = seat
         self.wlEventHandler = wlEventHandler
         self.renderSurfaceHook = renderSurfaceHook
+        self.viewAtHook = viewAtHook
         self.config = config
     }
 
@@ -295,7 +312,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         }
     }
 
-    private func viewAt(x: Double, y: Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
+    internal func viewAt(x: Double, y: Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
     {
         for output in self.viewSet.outputs() {
             let outputLayoutBox = output.data.box
@@ -380,7 +397,7 @@ extension Awc {
         if event.pointee.state == WLR_BUTTON_RELEASED && self.dragging != nil {
             self.dragging = nil
         } else if self.exclusiveClient == nil {
-            if let (parent, surface, _, _) = self.viewAt(x: self.cursor.pointee.x, y: self.cursor.pointee.y) {
+            if let (parent, surface, _, _) = self.viewAtHook(self, self.cursor.pointee.x, self.cursor.pointee.y) {
                 // Focus the surface under cursor if it's different from the current focus
                 switch parent {
                 case .layer: ()
@@ -452,7 +469,7 @@ extension Awc {
 
         if let dragging = self.dragging {
             dragging(time, cx, cy)
-        } else if let (_, surface, sx, sy) = self.viewAt(x: cx, y: cy) {
+        } else if let (_, surface, sx, sy) = self.viewAtHook(self, cx, cy) {
             wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
             wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
         } else {
@@ -717,12 +734,12 @@ extension Awc: SeatEventHandler {
     }
 
     internal func start(drag: UnsafeMutablePointer<wlr_drag>) {
-        if viewAt(x: self.cursor.pointee.x, y: self.cursor.pointee.y) != nil {
+        if viewAtHook(self, self.cursor.pointee.x, self.cursor.pointee.y) != nil {
             if let icon = drag.pointee.icon {
                 handleNewDrag(icon: icon)
             }
             self.dragging = { (time, x, y) in
-                if let (_, surface, sx, sy) = self.viewAt(x: x, y: y) {
+                if let (_, surface, sx, sy) = self.viewAtHook(self, x, y) {
                     wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
                     wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
 
@@ -976,6 +993,7 @@ func main() {
             inactiveBorderColor: config.inactiveBorderColor,
             renderSurface
         ),
+        viewAtHook: { layerViewAt(delegate: defaultViewAtHook, awc: $0, x: $1, y: $2) },
         config: config
     )
 
