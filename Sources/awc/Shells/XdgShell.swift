@@ -334,15 +334,6 @@ extension Awc: XdgPopup {
     }
 }
 
-extension UnsafeMutablePointer where Pointee == wlr_subsurface {
-    func parentToplevel() -> UnsafeMutablePointer<wlr_xdg_surface>? {
-        var xdgSurface = wlr_xdg_surface_from_wlr_surface(self.pointee.parent)
-        while xdgSurface != nil && xdgSurface?.pointee.role == WLR_XDG_SURFACE_ROLE_POPUP {
-            xdgSurface = wlr_xdg_surface_from_wlr_surface(xdgSurface?.pointee.popup.pointee.parent)
-        }
-        return xdgSurface
-    }
-}
 
 extension Awc: Subsurface {
     func commit(subsurface: UnsafeMutablePointer<wlr_subsurface>) {

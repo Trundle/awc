@@ -699,17 +699,6 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
 }
 
 
-extension UnsafeMutablePointer where Pointee == wlr_surface {
-    func isXdgPopup() -> Bool {
-        if wlr_surface_is_xdg_surface(self) {
-            let xdgSurface = wlr_xdg_surface_from_wlr_surface(self)!
-            return xdgSurface.pointee.role == WLR_XDG_SURFACE_ROLE_POPUP
-        }
-        return false
-    }
-}
-
-
 func layerViewAt<L: Layout>(
   delegate: ViewAtHook<L>,
   awc: Awc<L>,
