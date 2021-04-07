@@ -88,6 +88,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let cursor: UnsafeMutablePointer<wlr_cursor>
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
+    let idle: UnsafeMutablePointer<wlr_idle>
     let renderSurfaceHook: RenderSurfaceHook<L>
     let viewAtHook: ViewAtHook<L>
     private var hasKeyboard: Bool = false
@@ -114,6 +115,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         cursor: UnsafeMutablePointer<wlr_cursor>,
         cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>,
         seat: UnsafeMutablePointer<wlr_seat>,
+        idle: UnsafeMutablePointer<wlr_idle>,
         layout: L,
         renderSurfaceHook: @escaping RenderSurfaceHook<L>,
         viewAtHook: @escaping ViewAtHook<L>,
@@ -141,6 +143,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.cursor = cursor
         self.cursorManager = cursorManager
         self.seat = seat
+        self.idle = idle
         self.wlEventHandler = wlEventHandler
         self.renderSurfaceHook = renderSurfaceHook
         self.viewAtHook = viewAtHook
@@ -250,6 +253,8 @@ extension Awc {
     }
 
     private func handleCursorButton(_ event: UnsafeMutablePointer<wlr_event_pointer_button>) {
+        wlr_idle_notify_activity(self.idle, self.seat)
+
         if event.pointee.state == WLR_BUTTON_RELEASED && self.dragging != nil {
             self.dragging = nil
         } else if self.exclusiveClient == nil {
@@ -320,6 +325,8 @@ extension Awc {
 
     /// Handles the common path for a relative and absolute cursor motion
     private func handleCursorMotion(time: UInt32) {
+        wlr_idle_notify_activity(self.idle, self.seat)
+
         let cx = self.cursor.pointee.x
         let cy = self.cursor.pointee.y
 
@@ -515,6 +522,8 @@ extension Awc {
         _ event: UnsafeMutablePointer<wlr_event_keyboard_key>
     ) {
         var handled = false
+
+        wlr_idle_notify_activity(self.idle, self.seat)
 
         if self.exclusiveClient == nil {
             // Translate libinput keycode -> xkbcommon
@@ -829,6 +838,11 @@ func main() {
         return
     }
 
+    guard let idle = wlr_idle_create(wlDisplay) else {
+        print("[FATAL] Could not create idle")
+        return
+    }
+
     let full = Full<Surface, OutputDetails>()
     let layouts = full ||| TwoPane() ||| Rotated(layout: TwoPane())
     let layout = LayerLayout(wrapped: BorderShrinkLayout(borderWidth: config.borderWidth, layout: layouts))
@@ -842,6 +856,7 @@ func main() {
         cursor: cursor!,
         cursorManager: cursorManager!,
         seat: seat!,
+        idle: idle,
         layout: layout,
         renderSurfaceHook: smartBorders(
             borderWidth: config.borderWidth,
