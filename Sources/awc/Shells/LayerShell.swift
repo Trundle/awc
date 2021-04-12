@@ -22,6 +22,7 @@ protocol MappedLayerSurface: class {
 
 protocol LayerShellPopup: class {
     func commit(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
+    func destroy(layerPopup: UnsafeMutablePointer<wlr_xdg_popup>)
     func map(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
 }
 
@@ -44,6 +45,7 @@ struct MappedLayerListener: PListener {
 struct LayerShellPopupListener: PListener {
     weak var handler: LayerShellPopup?
     private var commit: wl_listener = wl_listener()
+    private var destroy: wl_listener = wl_listener()
     private var map: wl_listener = wl_listener()
 
     mutating func listen(to popup: UnsafeMutablePointer<wlr_xdg_popup>) {
@@ -55,12 +57,18 @@ struct LayerShellPopupListener: PListener {
             })
         }
 
+        Self.add(signal: &popup.pointee.base.pointee.events.destroy, listener: &self.destroy) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.destroy, { $0.destroy(layerPopup: $1) })
+        }
+
         Self.add(signal: &popup.pointee.base.pointee.events.map, listener: &self.map) { (listener, data) in
             Self.handle(from: listener!, data: data!, \Self.map, { $0.map(layerPopupSurface: $1) })
         }
     }
 
     mutating func deregister() {
+        wl_list_remove(&self.commit.link)
+        wl_list_remove(&self.destroy.link)
         wl_list_remove(&self.map.link)
     }
 }
@@ -180,6 +188,8 @@ extension Awc: LayerShell {
 
     func unmap(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
         withLayerData(layerSurface, or: wlr_layer_surface_v1_close(layerSurface)) { layerData in
+            self.removeListener(layerSurface, MappedLayerListener.self)
+
             layerData.mapped.remove(layerSurface)
             layerData.unmapped.insert(layerSurface)
             self.updateLayout()
@@ -421,6 +431,10 @@ extension Awc: MappedLayerSurface {
 extension Awc: LayerShellPopup {
     func commit(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
         damageWhole(popup: layerPopupSurface.pointee.popup)
+    }
+
+    func destroy(layerPopup: UnsafeMutablePointer<wlr_xdg_popup>) {
+        self.removeListener(layerPopup, LayerShellPopupListener.self)
     }
 
     func map(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
