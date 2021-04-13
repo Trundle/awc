@@ -109,7 +109,7 @@ extension Awc {
 
             // Add floating windows
             if let stack = output.workspace.stack {
-                for surface in stack.toList() {
+                for surface in stack.reverse().toList() {
                     if let box = self.viewSet.floating[surface] {
                         surface.configure(output: outputLayoutBox, box: box)
                         output.arrangement.append((surface, [.floating], box))
