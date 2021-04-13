@@ -882,6 +882,8 @@ func main() {
     // Set up decorations: Wayland knows server-side and client-side decorations. We provide server-side decorations.
     setUpDecorations(wlDisplay: wlDisplay, awc: awc)
 
+    runAutostart()
+
     // Run the Wayland event loop. This does not return until you exit the
     // compositor. Starting the backend rigged up all of the necessary event
     // loop configuration to listen to libinput events, DRM events, generate

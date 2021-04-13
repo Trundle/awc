@@ -387,5 +387,14 @@ func awcConfigRelease(token unsafe.Pointer) {
 	delete(configs, token)
 }
 
+//export awcAutostartPath
+func awcAutostartPath() *C.char {
+	path, err := xdg.ConfigFile("awc/autostart")
+	if err != nil {
+		panic(err)
+	}
+	return C.CString(path)
+}
+
 func main() {}
 

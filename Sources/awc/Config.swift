@@ -1,3 +1,5 @@
+import Foundation
+
 import awc_config
 import Wlroots
 
@@ -355,5 +357,17 @@ private func toButton(_ button: UInt32) -> UInt32 {
     case 1: return UInt32(BTN_LEFT)
     case 3: return UInt32(BTN_RIGHT)
     default: fatalError("Unknown button: \(button)")
+    }
+}
+
+func runAutostart() {
+    let autostartCPath = awcAutostartPath()
+    defer {
+        free(autostartCPath)
+    }
+
+    let autostartPath = String(cString: autostartCPath!)
+    if FileManager.default.isExecutableFile(atPath: autostartPath) {
+        executeCommand(autostartPath)
     }
 }
