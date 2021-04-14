@@ -22,8 +22,8 @@ extension Awc {
                 let prevXdgSurface = wlr_xdg_surface_from_wlr_surface(prevSurface)
                 wlr_xdg_toplevel_set_activated(prevXdgSurface, false)
             } else if wlr_surface_is_xwayland_surface(prevSurface) {
-                let prevXWaylandSurface = wlr_xwayland_surface_from_wlr_surface(prevSurface)!
-                if focus?.popupOf(wlrXWaylandSurface: prevXWaylandSurface) != .some(true) {
+                if case .xwayland = focus {} else {
+                    let prevXWaylandSurface = wlr_xwayland_surface_from_wlr_surface(prevSurface)!
                     wlr_xwayland_surface_activate(prevXWaylandSurface, false)
                 }
             }
