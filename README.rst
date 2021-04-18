@@ -79,7 +79,7 @@ Dependencies
 * pkg-config
 * wayland
 * wayland-protocols
-* wlroots (0.11 or newer)
+* wlroots (0.11 or 0.12)
 * xcb
 * xkbcommon
 
@@ -93,9 +93,11 @@ are listed a few (without any claim to completeness):
 * `hikari <https://hikari.acmelabs.space/>`_
 * `river <https://github.com/ifreund/river>`_
 * Sway_
+* `vivarium <https://github.com/inclement/vivarium>`_
 * `Wayfire <https://wayfire.org/>`_
 
-GNOME and KDE also work well with Wayland.
+GNOME and KDE also work well with Wayland. See also `wlroot's project list
+<https://github.com/swaywm/wlroots/wiki/Projects-which-use-wlroots>`_.
 
 
 License
