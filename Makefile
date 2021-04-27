@@ -55,7 +55,7 @@ test: awc
 		$(shell echo "$(LIBS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xlinker {} ")
 
 clean:
-	rm -f Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c
+	rm -f Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.*
 	rm -f Sources/awc_config/*.so Sources/awc_config/*.generated.go
 	rm -Rf .build
 

@@ -176,7 +176,7 @@ extension Awc: LayerShell {
             self.updateLayout()
 
             if layersAboveShell.contains(layerSurface.pointee.current.layer) &&
-                layerSurface.pointee.current.keyboard_interactive
+               layerSurface.pointee.current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE
             {
                 // Theoretically, there could be another interactive layer above this one, but how likely is that?
                 self.focus(focus: .layer(surface: layerSurface))
@@ -193,7 +193,7 @@ extension Awc: LayerShell {
             layerData.mapped.remove(layerSurface)
             layerData.unmapped.insert(layerSurface)
             self.updateLayout()
-            if layerSurface.pointee.current.keyboard_interactive {
+            if layerSurface.pointee.current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE  {
                 self.focusTop()
             }
         }
@@ -494,7 +494,7 @@ private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandle
                 for layer in layersAboveShell {
                     if let layerData = data.layers[output]?[layer] {
                         if layerData.mapped
-                           .filter({ $0.pointee.current.keyboard_interactive })
+                           .filter({ $0.pointee.current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE  })
                            .contains(where: { wl_resource_get_client($0.pointee.resource) == exclusiveClient })
                         {
                             // It is - find another layer by this client that can be focused
@@ -523,7 +523,7 @@ private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandle
                 if let layerData = data.layers[output.data.output]?[layer] {
                     if let surface = layerData
                         .mapped
-                        .filter({ $0.pointee.current.keyboard_interactive })
+                        .filter({ $0.pointee.current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE })
                         .first(where: { wl_resource_get_client($0.pointee.resource) == client })
                     {
                         return surface

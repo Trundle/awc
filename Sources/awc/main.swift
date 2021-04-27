@@ -536,7 +536,7 @@ extension Awc {
             let nsyms = xkb_state_key_get_syms(device.pointee.keyboard.pointee.xkb_state, keycode, syms)
 
             let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device.pointee.keyboard))
-            if event.pointee.state == WLR_KEY_PRESSED {
+            if event.pointee.state == WL_KEYBOARD_KEY_STATE_PRESSED {
                 for i in 0..<Int(nsyms) {
                     if let action = self.config.findKeyBinding(
                         modifiers: modifiers,
@@ -668,7 +668,7 @@ extension Awc: OutputDamage {
         }
 
         // Begin the rendering (calls glViewport and some other GL sanity checks)
-        wlr_renderer_begin(self.renderer, wlrOutput.pointee.width, wlrOutput.pointee.height)
+        wlr_renderer_begin(self.renderer, UInt32(wlrOutput.pointee.width), UInt32(wlrOutput.pointee.height))
 
         var color = float_rgba(r: 0.3, g: 0.3, b: 0.3, a: 1.0)
         color.withPtr { wlr_renderer_clear(self.renderer, $0) }
@@ -750,12 +750,8 @@ func main() {
     // The backend is a wlroots feature which abstracts the underlying input and
     // output hardware. The autocreate option will choose the most suitable
     // backend based on the current environment, such as opening an X11 window
-    // if an X11 server is running. The NULL argument here optionally allows you
-    // to pass in a custom renderer if wlr_renderer doesn't meet your needs. The
-    // backend uses the renderer, for example, to fall back to software cursors
-    // if the backend does not support hardware cursors (some older GPUs
-    // don't).
-    let backend = wlr_backend_autocreate(wlDisplay, nil)
+    // if an X11 server is running.
+    let backend = wlr_backend_autocreate(wlDisplay)
 
     // Create a no-op backend and output. Used when there is no other output.
     let noopBackend = wlr_noop_backend_create(wlDisplay)

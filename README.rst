@@ -79,7 +79,7 @@ Dependencies
 * pkg-config
 * wayland
 * wayland-protocols
-* wlroots (0.11 or 0.12)
+* wlroots (>= 0.13.0)
 * xcb
 * xkbcommon
 
