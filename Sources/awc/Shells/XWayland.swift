@@ -24,19 +24,19 @@ enum AtomWindowType: String, CaseIterable {
     case utility = "_NET_WM_WINDOW_TYPE_UTILITY"
 }
 
-protocol XWayland: class {
+protocol XWayland: AnyObject {
     func xwaylandReady()
     func newSurface(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
 }
 
-protocol XWaylandSurface: class {
+protocol XWaylandSurface: AnyObject{
     func configureRequest(event: UnsafeMutablePointer<wlr_xwayland_surface_configure_event>)
     func surfaceDestroyed(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
     func map(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
     func unmap(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
 }
 
-protocol XWaylandMappedSurface: class {
+protocol XWaylandMappedSurface: AnyObject {
     func commit(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>)
 }
 

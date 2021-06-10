@@ -1,6 +1,6 @@
 import Wlroots
 
-public protocol InputInhibitorHandler: class {
+public protocol InputInhibitorHandler: AnyObject {
     func activate(manager: UnsafeMutablePointer<wlr_input_inhibit_manager>)
     func deactivate(manager: UnsafeMutablePointer<wlr_input_inhibit_manager>)
 }

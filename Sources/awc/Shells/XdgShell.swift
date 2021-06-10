@@ -1,22 +1,22 @@
 import Wlroots
 
-protocol XdgShell: class {
+protocol XdgShell: AnyObject {
     func newSurface(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
 }
 
-protocol XdgSurface: class {
+protocol XdgSurface: AnyObject {
     func surfaceDestroyed(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     func map(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     func unmap(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
 }
 
-protocol XdgMappedSurface: class {
+protocol XdgMappedSurface: AnyObject {
     func commit(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     func newPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>)
     func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>)
 }
 
-protocol XdgPopup: class {
+protocol XdgPopup: AnyObject {
     func commit(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     func destroy(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     func map(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
@@ -24,7 +24,7 @@ protocol XdgPopup: class {
     func unmap(popupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
 }
 
-protocol Subsurface: class {
+protocol Subsurface: AnyObject {
     func commit(subsurface: UnsafeMutablePointer<wlr_subsurface>)
     func destroy(subsurface: UnsafeMutablePointer<wlr_subsurface>)
     func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>)

@@ -8,7 +8,7 @@
 import Wlroots
 import Libawc
 
-protocol LayerShell: class {
+protocol LayerShell: AnyObject {
     func newSurface(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>)
     func surfaceDestroyed(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>)
     func commit(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>)
@@ -16,11 +16,11 @@ protocol LayerShell: class {
     func unmap(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>)
 }
 
-protocol MappedLayerSurface: class {
+protocol MappedLayerSurface: AnyObject {
     func newLayerPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>)
 }
 
-protocol LayerShellPopup: class {
+protocol LayerShellPopup: AnyObject {
     func commit(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     func destroy(layerPopup: UnsafeMutablePointer<wlr_xdg_popup>)
     func map(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>)

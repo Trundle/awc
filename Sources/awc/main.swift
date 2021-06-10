@@ -619,7 +619,7 @@ extension Awc: SeatEventHandler {
 
 // MARK: Output damage tracking
 
-protocol OutputDamage: class {
+protocol OutputDamage: AnyObject {
     func frame(outputDamage: UnsafeMutablePointer<wlr_output_damage>)
 }
 

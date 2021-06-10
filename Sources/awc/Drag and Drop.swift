@@ -1,6 +1,6 @@
 import Wlroots
 
-protocol DragIconHandler: class {
+protocol DragIconHandler: AnyObject {
     func commit(icon: UnsafeMutablePointer<wlr_drag_icon>)
     func destroy(icon: UnsafeMutablePointer<wlr_drag_icon>)
     func map(icon: UnsafeMutablePointer<wlr_drag_icon>)

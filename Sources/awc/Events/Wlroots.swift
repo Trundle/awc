@@ -153,7 +153,7 @@ extension Listener {
     }
 }
 
-protocol SeatEventHandler: class {
+protocol SeatEventHandler: AnyObject {
     /// Raised by the seat when a client provides a cursor image.
     func cursorRequested(event: UnsafeMutablePointer<wlr_seat_pointer_request_set_cursor_event>)
 
@@ -205,7 +205,7 @@ struct SeatListener: PListener {
     }
 }
 
-protocol OutputDestroyedHandler: class {
+protocol OutputDestroyedHandler: AnyObject {
     func destroyed(output: UnsafeMutablePointer<wlr_output>)
 }
 

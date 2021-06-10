@@ -2,11 +2,11 @@ import Wlroots
 
 // MARK: Wayland server decorations
 
-protocol ServerDecorations: class {
+protocol ServerDecorations: AnyObject {
     func newDecoration(serverDecoration: UnsafeMutablePointer<wlr_server_decoration>)
 }
 
-protocol ServerDecoration: class {
+protocol ServerDecoration: AnyObject {
     func destroy(serverDecoration: UnsafeMutablePointer<wlr_server_decoration>)
     func requestMode(serverDecoration: UnsafeMutablePointer<wlr_server_decoration>)
 }
@@ -68,11 +68,11 @@ extension Awc: ServerDecoration {
 
 // MARK: XDG Toplevel Decorations
 
-protocol XdgDecorations: class {
+protocol XdgDecorations: AnyObject {
     func newToplevelDecoration(decoration: UnsafeMutablePointer<wlr_xdg_toplevel_decoration_v1>)
 }
 
-protocol XdgDecoration: class {
+protocol XdgDecoration: AnyObject {
     func destroy(decoration: UnsafeMutablePointer<wlr_xdg_toplevel_decoration_v1>)
     func requestMode(decoration: UnsafeMutablePointer<wlr_xdg_toplevel_decoration_v1>)
 }
