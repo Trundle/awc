@@ -71,7 +71,7 @@ Install the following dependencies and then run ``make``.
 Dependencies
 ------------
 
-* Go
+* Rust
 * Swift 5.3 (or newer)
 * GLESv2
 * libinput
@@ -82,6 +82,7 @@ Dependencies
 * wlroots (>= 0.13.0)
 * xcb
 * xkbcommon
+* openssl
 
 
 Alternatives

@@ -9,6 +9,7 @@ private extension AwcColor {
     }
 }
 
+
 public enum Action {
     /// Close focused surface
     case close
@@ -52,6 +53,11 @@ enum Key: Hashable {
     case sym(sym: xkb_keysym_t)
 }
 
+enum KeyboardType {
+    case builtin
+    case external
+}
+
 public struct ButtonActionKey: Hashable {
     let modifiers: KeyModifiers
     let button: UInt32
@@ -67,49 +73,45 @@ class Config {
     let activeBorderColor: float_rgba
     let inactiveBorderColor: float_rgba
     let outputConfigs: [String: (Int32, Int32, Float)]
+    private let displayErrorCmd: String
     private let buttonBindings: [ButtonActionKey: ButtonAction]
     private let keyBindings: [KeyActionKey: Action]
-    fileprivate let token: UnsafeMutableRawPointer
-
-    deinit {
-        awcConfigRelease(self.token)
-    }
+    private let keyboardConfigs: [(KeyboardType, String)]
 
     fileprivate init(
-        token: UnsafeMutableRawPointer,
         borderWidth: UInt32,
         activeBorderColor: float_rgba,
         inactiveBorderColor: float_rgba,
+        displayErrorCmd: String,
         buttonBindings: [ButtonActionKey: ButtonAction],
         keyBindings: [KeyActionKey: Action],
+        keyboardConfigs: [(KeyboardType, String)],
         outputConfigs: [String: (Int32, Int32, Float)]
     ) {
-        self.token = token
         self.borderWidth = borderWidth
         self.activeBorderColor = activeBorderColor
         self.inactiveBorderColor = inactiveBorderColor
+        self.displayErrorCmd = displayErrorCmd
         self.buttonBindings = buttonBindings
         self.keyBindings = keyBindings
+        self.keyboardConfigs = keyboardConfigs
         self.outputConfigs = outputConfigs
     }
 
     func configureKeyboard(vendor: UInt32) -> String {
-        var keyboardConfig = AwcKeyboardConfig()
-        defer {
-            free(keyboardConfig.Layout)
+        for config in self.keyboardConfigs {
+            if config.0 == .builtin && vendor <= 1 {
+                return config.1
+            } else if config.0 == .external && vendor > 1 {
+                return config.1
+            }
         }
-        awcConfigureKeyboard(vendor, self.token, &keyboardConfig)
-        return String(cString: keyboardConfig.Layout)
+        return "de(nodeadkeys)"
     }
 
     func generateErrorDisplayCmd(msg: String) -> String {
-        let cmd = msg.withCString {
-            awcGenerateErrorDisplayCmd($0, self.token)
-        }
-        defer {
-            free(cmd)
-        }
-        return String(cString: cmd!)
+        // XXX shell escape
+        return "\(displayErrorCmd) \"\(msg)\""
     }
 
     func findButtonBinding(modifiers: KeyModifiers, button: UInt32) -> ButtonAction? {
@@ -129,28 +131,30 @@ class Config {
 func loadConfig() -> Config? {
     var config = AwcConfig()
 
-    if let error = awcLoadConfig(nil, &config) {
+    if let error = awc_config_load(nil, &config) {
         print("[FATAL] Could not load config: \(String(cString: error))")
-        free(error)
+        awc_config_str_free(error)
         return nil
     }
     defer {
-        awcConfigFree(&config)
+        awc_config_free(&config)
     }
 
     var buttonBindings: [ButtonActionKey: ButtonAction] = [:]
-    for i in 0..<config.numberOfButtonBindings {
+    for i in 0..<config.number_of_button_bindings {
         let actionKey = ButtonActionKey(
-            modifiers: KeyModifiers(rawValue: config.buttonBindings[i].mods),
-            button: toButton(config.buttonBindings[i].button)
+            modifiers: toKeyModifiers(
+              config.button_bindings[i].mods,
+              config.button_bindings[i].number_of_mods),
+            button: toButton(config.button_bindings[i].button)
         )
-        buttonBindings[actionKey] = toButtonAction(&config.buttonBindings[i].action)
+        buttonBindings[actionKey] = toButtonAction(config.button_bindings[i].action)
     }
 
     var keyBindings: [KeyActionKey: Action] = [:]
-    for i in 0..<config.numberOfKeyBindings {
+    for i in 0..<config.number_of_key_bindings {
         let key: Key
-        if let sym = config.keyBindings[i].sym {
+        if let sym = config.key_bindings[i].sym {
             let keySym = xkb_keysym_from_name(sym, XKB_KEYSYM_NO_FLAGS)
             if keySym == 0 {
                 print("[WARN] Unknown key symbol: \(String(cString: sym))")
@@ -158,212 +162,246 @@ func loadConfig() -> Config? {
             }
             key = Key.sym(sym: keySym)
         } else {
-            assert(config.keyBindings[i].code != 0)
-            key = Key.code(code: config.keyBindings[i].code)
+            assert(config.key_bindings[i].code != 0)
+            key = Key.code(code: config.key_bindings[i].code)
         }
         let actionKey = KeyActionKey(
-            modifiers: KeyModifiers(rawValue: config.keyBindings[i].mods),
+            modifiers: toKeyModifiers(
+              config.key_bindings[i].mods,
+              config.key_bindings[i].number_of_mods),
             key: key
         )
-        keyBindings[actionKey] = toAction(&config.keyBindings[i].action)
+        keyBindings[actionKey] = toAction(config.key_bindings[i].action)
+    }
+
+    var keyboardConfigs: [(KeyboardType, String)] = []
+    for i in 0..<config.number_of_keyboards {
+        let type: KeyboardType
+        if config.keyboards[i].type_ == Builtin {
+            type = .builtin
+        } else {
+            type = .external
+        }
+        keyboardConfigs.append((type, String(cString: config.keyboards[i].layout)))
     }
 
     var outputConfigs: [String: (Int32, Int32, Float)] = [:]
-    for i in 0..<config.numberOfOutputs {
+    for i in 0..<config.number_of_outputs {
         let scale: Float = config.outputs[i].scale
         outputConfigs[String(cString: config.outputs[i].name)] =
             (config.outputs[i].x, config.outputs[i].y, scale)
     }
 
     return Config(
-        token: config.token,
-        borderWidth: config.borderWidth,
-        activeBorderColor: config.activeBorderColor.toFloatRgba(),
-        inactiveBorderColor: config.inactiveBorderColor.toFloatRgba(),
+        borderWidth: config.border_width,
+        activeBorderColor: config.active_border_color.toFloatRgba(),
+        inactiveBorderColor: config.inactive_border_color.toFloatRgba(),
+        displayErrorCmd: String(cString: config.display_error_cmd),
         buttonBindings: buttonBindings,
         keyBindings: keyBindings,
+        keyboardConfigs: keyboardConfigs,
         outputConfigs: outputConfigs
     )
 }
 
-private func toAction(_ action: inout AwcAction) -> Action {
+private func toKeyModifiers(_ mods: UnsafePointer<AwcModifier>?, _ numberOfMods: Int) -> KeyModifiers {
+    var result = KeyModifiers()
+    for i in 0..<numberOfMods {
+        let mod = mods![i]
+        if mod == Alt {
+            result.insert(.alt)
+        } else if mod == Ctrl {
+            result.insert(.ctrl)
+        } else if mod == Logo {
+            result.insert(.logo)
+        } else if mod == Shift {
+            result.insert(.shift)
+        }
+    }
+    return result
+}
+
+private func toAction(_ action: AwcAction) -> Action {
     if let execute = action.execute {
-        assert(action.switchVt == 0)
-        assert(!action.focusDown)
-        assert(!action.focusUp)
-        assert(!action.focusPrimary)
+        assert(action.switch_vt == 0)
+        assert(!action.focus_down)
+        assert(!action.focus_up)
+        assert(!action.focus_primary)
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(!action.nextLayout)
-        assert(action.moveTo == nil)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(!action.next_layout)
+        assert(action.move_to == nil)
         assert(action.view == nil)
-        assert(action.focusOutput == 0)
-        assert(action.moveToOutput == 0)
-        assert(action.switchVt == 0)
+        assert(action.focus_output == 0)
+        assert(action.move_to_output == 0)
+        assert(action.switch_vt == 0)
         return .execute(cmd: String(cString: execute))
-    } else if let tag = action.moveTo {
-        assert(!action.focusDown)
-        assert(!action.focusUp)
-        assert(!action.focusPrimary)
+    } else if let tag = action.move_to {
+        assert(!action.focus_down)
+        assert(!action.focus_up)
+        assert(!action.focus_primary)
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(!action.nextLayout)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(!action.next_layout)
         assert(action.view == nil)
-        assert(action.focusOutput == 0)
-        assert(action.moveToOutput == 0)
-        assert(action.switchVt == 0)
+        assert(action.focus_output == 0)
+        assert(action.move_to_output == 0)
+        assert(action.switch_vt == 0)
         return .moveTo(tag: String(cString: tag))
-    } else if action.moveToOutput != 0 {
-        assert(!action.focusDown)
-        assert(!action.focusUp)
-        assert(!action.focusPrimary)
+    } else if action.move_to_output != 0 {
+        assert(!action.focus_down)
+        assert(!action.focus_up)
+        assert(!action.focus_primary)
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(!action.nextLayout)
-        assert(action.focusOutput == 0)
-        assert(action.switchVt == 0)
-        return .moveToOutput(n: action.moveToOutput)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(!action.next_layout)
+        assert(action.focus_output == 0)
+        assert(action.switch_vt == 0)
+        return .moveToOutput(n: action.move_to_output)
     } else if let tag = action.view {
-        assert(!action.focusDown)
-        assert(!action.focusUp)
-        assert(!action.focusPrimary)
+        assert(!action.focus_down)
+        assert(!action.focus_up)
+        assert(!action.focus_primary)
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(!action.nextLayout)
-        assert(action.focusOutput == 0)
-        assert(action.switchVt == 0)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(!action.next_layout)
+        assert(action.focus_output == 0)
+        assert(action.switch_vt == 0)
         return .view(tag: String(cString: tag))
     } else if action.close {
-        assert(!action.configReload)
-        assert(!action.focusUp)
-        assert(!action.focusPrimary)
+        assert(!action.config_reload)
+        assert(!action.focus_up)
+        assert(!action.focus_primary)
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.nextLayout)
-        assert(action.switchVt == 0)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.next_layout)
+        assert(action.switch_vt == 0)
         return .close
-    } else if action.configReload {
-        assert(!action.focusUp)
-        assert(!action.focusPrimary)
+    } else if action.config_reload {
+        assert(!action.focus_up)
+        assert(!action.focus_primary)
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.nextLayout)
-        assert(action.switchVt == 0)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.next_layout)
+        assert(action.switch_vt == 0)
         return .configReload
-    } else if action.focusDown {
-        assert(!action.focusUp)
-        assert(!action.focusPrimary)
+    } else if action.focus_down {
+        assert(!action.focus_up)
+        assert(!action.focus_primary)
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(!action.nextLayout)
-        assert(action.focusOutput == 0)
-        assert(action.switchVt == 0)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(!action.next_layout)
+        assert(action.focus_output == 0)
+        assert(action.switch_vt == 0)
         return .focusDown
-    }  else if action.focusUp {
-        assert(!action.focusPrimary)
+    }  else if action.focus_up {
+        assert(!action.focus_primary)
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(!action.nextLayout)
-        assert(action.focusOutput == 0)
-        assert(action.switchVt == 0)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(!action.next_layout)
+        assert(action.focus_output == 0)
+        assert(action.switch_vt == 0)
         return .focusUp
-    } else if action.focusPrimary {
+    } else if action.focus_primary {
         assert(!action.sink)
-        assert(!action.swapDown)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(!action.nextLayout)
-        assert(action.focusOutput == 0)
-        assert(action.switchVt == 0)
+        assert(!action.swap_down)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(!action.next_layout)
+        assert(action.focus_output == 0)
+        assert(action.switch_vt == 0)
         return .focusPrimary
-    } else if action.focusOutput != 0 {
-        assert(!action.nextLayout)
+    } else if action.focus_output != 0 {
+        assert(!action.next_layout)
         assert(!action.sink)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(action.switchVt == 0)
-        return .focusOutput(n: action.focusOutput)
-    }  else if action.swapDown {
-        assert(!action.nextLayout)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(action.switch_vt == 0)
+        return .focusOutput(n: action.focus_output)
+    }  else if action.swap_down {
+        assert(!action.next_layout)
         assert(!action.sink)
-        assert(!action.swapUp)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(action.switchVt == 0)
+        assert(!action.swap_up)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(action.switch_vt == 0)
         return .swapDown
-    }  else if action.swapUp {
-        assert(!action.nextLayout)
+    }  else if action.swap_up {
+        assert(!action.next_layout)
         assert(!action.sink)
-        assert(!action.swapPrimary)
-        assert(!action.swapWorkspaces)
-        assert(action.switchVt == 0)
+        assert(!action.swap_primary)
+        assert(!action.swap_workspaces)
+        assert(action.switch_vt == 0)
         return .swapUp
-    }  else if action.swapPrimary {
+    }  else if action.swap_primary {
         assert(!action.sink)
-        assert(!action.swapWorkspaces)
-        assert(action.switchVt == 0)
+        assert(!action.swap_workspaces)
+        assert(action.switch_vt == 0)
         return .swapPrimary
     } else if action.sink {
-        assert(!action.swapWorkspaces)
-        assert(action.switchVt == 0)
+        assert(!action.swap_workspaces)
+        assert(action.switch_vt == 0)
         return .sink
-    }  else if action.swapWorkspaces {
-        assert(action.switchVt == 0)
+    }  else if action.swap_workspaces {
+        assert(action.switch_vt == 0)
         return .swapWorkspaces
-    } else if action.nextLayout {
-        assert(action.switchVt == 0)
+    } else if action.next_layout {
+        assert(action.switch_vt == 0)
         return .nextLayout
     } else {
-        assert(action.switchVt != 0)
-        return .switchVt(n: action.switchVt)
+        assert(action.switch_vt != 0)
+        return .switchVt(n: action.switch_vt)
     }
 }
 
-private func toButtonAction(_ action: inout AwcButtonAction) -> ButtonAction {
-    if action.move {
-        assert(!action.resize)
+private func toButtonAction(_ action: AwcButtonAction) -> ButtonAction {
+    if action == Move {
         return .move
-    } else {
+    } else if action == Resize {
         return .resize
+    } else {
+        fatalError("Unknown button action: \(action)")
     }
 }
 
-private func toButton(_ button: UInt32) -> UInt32 {
-    switch button {
-    case 1: return UInt32(BTN_LEFT)
-    case 3: return UInt32(BTN_RIGHT)
-    default: fatalError("Unknown button: \(button)")
+private func toButton(_ button: AwcButton) -> UInt32 {
+    if button ==  Left {
+        return UInt32(BTN_LEFT)
+    } else if button == Right {
+        return UInt32(BTN_RIGHT)
+    } else {
+        fatalError("Unknown button: \(button)")
     }
 }
 
 func runAutostart() {
-    let autostartCPath = awcAutostartPath()
+    let autostartCPath = awc_config_autostart_path()
     defer {
-        free(autostartCPath)
+        awc_config_str_free(autostartCPath)
     }
 
     let autostartPath = String(cString: autostartCPath!)

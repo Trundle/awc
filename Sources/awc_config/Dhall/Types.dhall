@@ -38,25 +38,23 @@ let Config =
           { borderWidth : Natural
           , activeBorderColor : Color
           , inactiveBorderColor : Color
-          , configureKeyboard : ∀(vendor : Natural) → { layout : Text }
+          , keyboards : List { layout : Text }
           , outputs :
               List { name : Text, x : Integer, y : Integer, scale : Double }
-          , shouldFloat : ∀(appId : Text) → Bool
           , buttonBindings : List ButtonBinding
           , keyBindings : List KeyBinding
-          , errorDisplay : ∀(msg : Text) → Text
+          , displayErrorCmd : Text
           }
       , default =
         { borderWidth = 2
         , activeBorderColor = { r = 0xe3, g = 0xc5, b = 0x98, a = 0xff }
         , inactiveBorderColor = { r = 0x8a, g = 0x6e, b = 0x64, a = 0xff }
-        , configureKeyboard = λ(vendor : Natural) → { layout = "de" }
+        , keyboards = [] : List { layout : Text }
         , outputs =
             [] : List { name : Text, x : Integer, y : Integer, scale : Double }
-        , shouldFloat = λ(_ : Text) → False
         , buttonBindings = [] : List ButtonBinding
         , keyBindings = [] : List KeyBinding
-        , errorDisplay = λ(msg : Text) → "swaynag -m \"${msg}\""
+        , displayErrorCmd = "swaynag -m "
         }
       }
 

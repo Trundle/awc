@@ -6,22 +6,15 @@ import awc_config
 public final class ConfigTests: XCTestCase {
     func testEmptyConfig() {
         withConfig("empty") {
-            XCTAssertEqual($0.borderWidth, 2)
-            XCTAssertEqual($0.numberOfKeyBindings, 0)
+            XCTAssertEqual($0.border_width, 2)
+            XCTAssertEqual($0.number_of_key_bindings, 0)
         }
     }
 
     func testButtonBinding() {
         withConfig("button_binding") {
-            XCTAssertEqual($0.numberOfButtonBindings, 1)
-            XCTAssertEqual($0.buttonBindings[0].mods, 9)
-        }
-    }
-
-    func testDuplicatedModifiers() {
-        withConfig("duplicated_mods") {
-            XCTAssertEqual($0.numberOfKeyBindings, 1)
-            XCTAssertEqual($0.keyBindings[0].mods, 8)
+            XCTAssertEqual($0.number_of_button_bindings, 1)
+            XCTAssertEqual($0.button_bindings[0].number_of_mods, 3)
         }
     }
 
@@ -29,14 +22,14 @@ public final class ConfigTests: XCTestCase {
         let configPath = Bundle.module.path(forResource: fixtureName, ofType: "dhall", inDirectory: "Fixtures")!
 
         var awcConfig = AwcConfig()
-        if let error = awcLoadConfig(configPath, &awcConfig) {
+        if let error = awc_config_load(configPath, &awcConfig) {
             defer {
-                free(error)
+                awc_config_str_free(error)
             }
             XCTFail(String(cString: error))
         } else {
             defer {
-                awcConfigFree(&awcConfig)
+                awc_config_free(&awcConfig)
             }
             block(awcConfig)
         }
@@ -45,6 +38,5 @@ public final class ConfigTests: XCTestCase {
     public static var allTests = [
         ("testEmptyConfig", testEmptyConfig),
         ("testButtonBinding", testButtonBinding),
-        ("testDuplicatedModifiers", testDuplicatedModifiers),
     ]
 }
