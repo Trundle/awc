@@ -235,7 +235,10 @@ extension Awc: XdgSurface {
             self.addListener(xdgSurface, XdgMappedSurfaceListener.newFor(emitter: xdgSurface, handler: self))
 
             if let wlrSurface = xdgSurface.pointee.surface {
-                for subsurface in wlrSurface.pointee.subsurfaces.sequence(\wlr_subsurface.parent_link) {
+                for subsurface in wlrSurface.pointee.subsurfaces_above.sequence(\wlr_subsurface.parent_link) {
+                    newSubsurface(subsurface: subsurface)
+                }
+                for subsurface in wlrSurface.pointee.subsurfaces_below.sequence(\wlr_subsurface.parent_link) {
                     newSubsurface(subsurface: subsurface)
                 }
             }
@@ -281,9 +284,13 @@ extension Awc: XdgMappedSurface {
         self.addListener(subsurface, SubsurfaceListener.newFor(emitter: subsurface, handler: self))
 
         if let wlrSurface = subsurface.pointee.surface {
-            for childSubsurface in wlrSurface.pointee.subsurfaces.sequence(\wlr_subsurface.parent_link) {
+            for childSubsurface in wlrSurface.pointee.subsurfaces_above.sequence(\wlr_subsurface.parent_link) {
                 newSubsurface(subsurface: childSubsurface)
             }
+            for childSubsurface in wlrSurface.pointee.subsurfaces_below.sequence(\wlr_subsurface.parent_link) {
+                newSubsurface(subsurface: childSubsurface)
+            }
+
         }
     }
 }
