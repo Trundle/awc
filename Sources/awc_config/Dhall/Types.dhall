@@ -22,6 +22,8 @@ let Button = < Left | Right >
 
 let ButtonAction = < Move | Resize >
 
+let KeyboardType = < Builtin | External >
+
 let Key = < Code : Natural | Sym : Text >
 
 let Modifier = < Alt | Ctrl | Logo | Shift >
@@ -38,7 +40,7 @@ let Config =
           { borderWidth : Natural
           , activeBorderColor : Color
           , inactiveBorderColor : Color
-          , keyboards : List { layout : Text }
+          , keyboards : List { type : KeyboardType, layout : Text }
           , outputs :
               List { name : Text, x : Integer, y : Integer, scale : Double }
           , buttonBindings : List ButtonBinding
@@ -49,7 +51,7 @@ let Config =
         { borderWidth = 2
         , activeBorderColor = { r = 0xe3, g = 0xc5, b = 0x98, a = 0xff }
         , inactiveBorderColor = { r = 0x8a, g = 0x6e, b = 0x64, a = 0xff }
-        , keyboards = [] : List { layout : Text }
+        , keyboards = [] : List { type : KeyboardType, layout : Text }
         , outputs =
             [] : List { name : Text, x : Integer, y : Integer, scale : Double }
         , buttonBindings = [] : List ButtonBinding
@@ -66,5 +68,6 @@ in  { Action
     , Config
     , Key
     , KeyBinding
+    , KeyboardType
     , Modifier
     }
