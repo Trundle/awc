@@ -1,11 +1,13 @@
 let Action =
       < Execute : Text
+      | Expand
       | Close
       | ConfigReload
       | FocusDown
       | FocusUp
       | FocusPrimary
       | FocusOutput : Natural
+      | Shrink
       | Sink
       | SwapDown
       | SwapUp
@@ -26,7 +28,7 @@ let KeyboardType = < Builtin | External >
 
 let Key = < Code : Natural | Sym : Text >
 
-let Modifier = < Alt | Ctrl | Logo | Shift >
+let Modifier = < Alt | Ctrl | Logo | Mod5 | Shift >
 
 let Color = { r : Natural, g : Natural, b : Natural, a : Natural }
 

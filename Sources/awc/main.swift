@@ -103,7 +103,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     internal var surfaces: [UnsafeMutablePointer<wlr_surface>: (Double, Double)] = [:]
     // An exclusive client that receives all input, if there is one (see wlroot's input inhibit protocol)
     internal var exclusiveClient: OpaquePointer? = nil
-    internal var config: Config
+        internal var config: Config
 
     init(
         wlEventHandler: WlEventHandler,
@@ -840,7 +840,8 @@ func main() {
     }
 
     let full = Full<Surface, OutputDetails>()
-    let layouts = full ||| TwoPane() ||| Rotated(layout: TwoPane())
+    let twoPane = TwoPane<Surface, OutputDetails>(split: 0.5, delta: 0.025)
+    let layouts = full ||| twoPane ||| Rotated(layout: twoPane)
     let layout = LayerLayout(wrapped: BorderShrinkLayout(borderWidth: config.borderWidth, layout: layouts))
     let awc = Awc(
         wlEventHandler: wlEventHandler,

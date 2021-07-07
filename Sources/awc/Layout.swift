@@ -37,6 +37,9 @@ public protocol Layout {
 
     func firstLayout() -> Self
     func nextLayout() -> Self?
+
+    func expand() -> Self
+    func shrink() -> Self
 }
 
 // Default implementations
@@ -56,6 +59,14 @@ extension Layout {
     public func nextLayout() -> Self? {
         nil
     }
+
+    public func expand() -> Self {
+        self
+    }
+
+    public func shrink() -> Self {
+        self
+    }
 }
 
 /// The simplest of all layouts: renders the focused surface fullscreen.
@@ -73,8 +84,14 @@ public class Full<View, OutputData> : Layout {
 /// A layout that splits the screen horizontally and shows two windows. The left window is always
 /// the main window, and the right is either the currently focused window or the second window in
 /// layout order.
-public class TwoPane<View, OutputData>: Layout {
-    private let split = 0.5
+public final class TwoPane<View, OutputData>: Layout {
+    private let split: Double
+    private let delta: Double
+
+    public init(split: Double, delta: Double) {
+        self.split = split
+        self.delta = delta
+    }
 
     public func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
@@ -92,6 +109,14 @@ public class TwoPane<View, OutputData>: Layout {
             }
         }
     }
+
+    public func expand() -> TwoPane<View, OutputData> {
+        TwoPane(split: min(1, self.split + self.delta), delta: self.delta)
+    }
+
+    public func shrink() -> TwoPane<View, OutputData> {
+        TwoPane(split: max(0, self.split - self.delta), delta: self.delta)
+    }
 }
 
 public final class Choose<Left: Layout, Right: Layout>: Layout
@@ -107,20 +132,17 @@ public final class Choose<Left: Layout, Right: Layout>: Layout
     private let current: Branch
     private let left: Left
     private let right: Right
-    private let start: (Left, Right)
 
     public init(_ left: Left, _ right: Right) {
         self.current = .left
         self.left = left
         self.right = right
-        self.start = (left, right)
     }
 
-    private init(left: Left, right: Right, current: Branch, start: (Left, Right)) {
+    private init(left: Left, right: Right, current: Branch) {
         self.current = current
         self.left = left
         self.right = right
-        self.start = start
     }
 
     public func emptyLayout<L: Layout>(
@@ -147,23 +169,37 @@ public final class Choose<Left: Layout, Right: Layout>: Layout
     }
 
     public func firstLayout() -> Choose<Left, Right> {
-        Choose(left: self.start.0, right: self.start.1, current: .left, start: self.start)
+        Choose(left: self.left.firstLayout(), right: self.right.firstLayout(), current: .left)
     }
 
     public func nextLayout() -> Choose<Left, Right>? {
         switch self.current {
         case .left:
             if let next = self.left.nextLayout() {
-                return Choose(left: next, right: self.right, current: self.current, start: self.start)
+                return Choose(left: next, right: self.right, current: self.current)
             } else {
-                return Choose(left: self.left, right: self.right, current: .right, start: self.start)
+                return Choose(left: self.left, right: self.right, current: .right)
             }
         case .right:
             if let next = self.right.nextLayout() {
-                return Choose(left: self.left, right: next, current: self.current, start: self.start)
+                return Choose(left: self.left, right: next, current: self.current)
             } else {
                 return nil
             }
+        }
+    }
+
+    public func expand() -> Choose<Left, Right> {
+        switch self.current {
+        case .left: return Choose(left: self.left.expand(), right: self.right, current: self.current)
+        case .right: return Choose(left: self.left, right: self.right.expand(), current: self.current)
+        }
+    }
+
+    public func shrink() -> Choose<Left, Right> {
+        switch self.current {
+        case .left: return Choose(left: self.left.shrink(), right: self.right, current: self.current)
+        case .right: return Choose(left: self.left, right: self.right.shrink(), current: self.current)
         }
     }
 }
@@ -204,6 +240,14 @@ public final class Rotated<L: Layout>: Layout {
         self.layout
             .doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box.rotated())
             .map { (view, attributes, viewBox) in (view, attributes, viewBox.rotated()) }
+    }
+
+    public func expand() -> Rotated<L> {
+        Rotated(layout: self.layout.expand())
+    }
+
+    public func shrink() -> Rotated<L> {
+        Rotated(layout: self.layout.shrink())
     }
 }
 

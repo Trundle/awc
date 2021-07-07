@@ -56,6 +56,14 @@ final class BorderShrinkLayout<Wrapped: Layout>: Layout {
             return nil
         }
     }
+
+    public func expand() -> BorderShrinkLayout<Wrapped> {
+        BorderShrinkLayout(borderWidth: self.borderWidth, layout: self.layout.expand())
+    }
+
+    public func shrink() -> BorderShrinkLayout<Wrapped> {
+        BorderShrinkLayout(borderWidth: self.borderWidth, layout: self.layout.shrink())
+    }
 }
 
 public func smartBorders<L: Layout>(

@@ -96,8 +96,9 @@ extension Awc {
             )
 
             if let stack = output.workspace.stack?.filter({ !self.viewSet.floating.contains(key: $0) }) {
-                let arrangement =
-                    output.workspace.layout.doLayout(dataProvider: self, output: output, stack: stack, box: outputBox)
+                let arrangement = output.workspace.layout
+                    .doLayout(dataProvider: self, output: output, stack: stack, box: outputBox)
+                    .filter { $0.2.width > 0 && $0.2.height > 0 }
                 for (surface, _, box) in arrangement {
                     surface.configure(output: outputLayoutBox, box: box)
                 }

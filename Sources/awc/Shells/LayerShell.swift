@@ -696,6 +696,14 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
         }
     }
 
+    func expand() -> LayerLayout<WrappedLayout> {
+        LayerLayout(wrapped: self.wrapped.expand(), data: self.data)
+    }
+
+    func shrink() -> LayerLayout<WrappedLayout> {
+        LayerLayout(wrapped: self.wrapped.shrink(), data: self.data)
+    }
+
     private func addTo<L: Layout>(
         arrangement: inout [(Surface, Set<ViewAttribute>, wlr_box)],
         output: Output<L>,

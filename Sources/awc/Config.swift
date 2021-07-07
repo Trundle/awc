@@ -15,6 +15,8 @@ public enum Action {
     case close
     case configReload
     case execute(cmd: String)
+    /// Expand the main area
+    case expand
     /// Move focus to next surface
     case focusDown
     /// Move focus to previous surface
@@ -34,6 +36,8 @@ public enum Action {
     /// Move focused surface to output n
     case moveToOutput(n: UInt8)
     case nextLayout
+    /// Shrink the main area
+    case shrink
     /// Push focused surface back into tiling
     case sink
     /// Swap workspaces on primary and secondary output
@@ -214,6 +218,8 @@ private func toKeyModifiers(_ mods: UnsafePointer<AwcModifier>?, _ numberOfMods:
             result.insert(.ctrl)
         } else if mod == Logo {
             result.insert(.logo)
+        } else if mod == Mod5 {
+            result.insert(.mod5)
         } else if mod == Shift {
             result.insert(.shift)
         }
@@ -221,159 +227,82 @@ private func toKeyModifiers(_ mods: UnsafePointer<AwcModifier>?, _ numberOfMods:
     return result
 }
 
+private func assertExactlyOneAction(_ action: AwcAction) {
+    let noArgAction =
+        [ action.close
+        , action.config_reload
+        , action.expand
+        , action.focus_down
+        , action.focus_up
+        , action.focus_primary
+        , action.shrink
+        , action.sink
+        , action.swap_down
+        , action.swap_up
+        , action.swap_primary
+        , action.swap_workspaces
+        , action.next_layout
+        ].reduce(false, { assert(!$0 || !$1); return $0 || $1 })
+
+    let numArgAction =
+        [ action.focus_output
+        , action.move_to_output
+        , action.switch_vt
+        ].reduce(UInt8(0), { assert($0 == 0 || $1 == 0); return $0 + $1 })
+
+    let stringArgAction: UnsafePointer<CChar>? =
+        [ action.execute
+        , action.move_to
+        , action.view
+        ].reduce(nil, { assert($0 == nil || $1 == nil); return $0 ?? $1 })
+
+    assert(
+        [ noArgAction
+        , numArgAction != 0
+        , stringArgAction != nil
+        ].reduce(false, { assert(!$0 || !$1); return $0 || $1 })
+    )
+}
+
 private func toAction(_ action: AwcAction) -> Action {
+    assertExactlyOneAction(action)
     if let execute = action.execute {
-        assert(action.switch_vt == 0)
-        assert(!action.focus_down)
-        assert(!action.focus_up)
-        assert(!action.focus_primary)
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(!action.next_layout)
-        assert(action.move_to == nil)
-        assert(action.view == nil)
-        assert(action.focus_output == 0)
-        assert(action.move_to_output == 0)
-        assert(action.switch_vt == 0)
         return .execute(cmd: String(cString: execute))
+    } else if action.expand {
+        return .expand
     } else if let tag = action.move_to {
-        assert(!action.focus_down)
-        assert(!action.focus_up)
-        assert(!action.focus_primary)
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(!action.next_layout)
-        assert(action.view == nil)
-        assert(action.focus_output == 0)
-        assert(action.move_to_output == 0)
-        assert(action.switch_vt == 0)
         return .moveTo(tag: String(cString: tag))
     } else if action.move_to_output != 0 {
-        assert(!action.focus_down)
-        assert(!action.focus_up)
-        assert(!action.focus_primary)
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(!action.next_layout)
-        assert(action.focus_output == 0)
-        assert(action.switch_vt == 0)
         return .moveToOutput(n: action.move_to_output)
     } else if let tag = action.view {
-        assert(!action.focus_down)
-        assert(!action.focus_up)
-        assert(!action.focus_primary)
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(!action.next_layout)
-        assert(action.focus_output == 0)
-        assert(action.switch_vt == 0)
         return .view(tag: String(cString: tag))
     } else if action.close {
-        assert(!action.config_reload)
-        assert(!action.focus_up)
-        assert(!action.focus_primary)
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.next_layout)
-        assert(action.switch_vt == 0)
         return .close
     } else if action.config_reload {
-        assert(!action.focus_up)
-        assert(!action.focus_primary)
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.next_layout)
-        assert(action.switch_vt == 0)
         return .configReload
     } else if action.focus_down {
-        assert(!action.focus_up)
-        assert(!action.focus_primary)
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(!action.next_layout)
-        assert(action.focus_output == 0)
-        assert(action.switch_vt == 0)
         return .focusDown
     }  else if action.focus_up {
-        assert(!action.focus_primary)
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(!action.next_layout)
-        assert(action.focus_output == 0)
-        assert(action.switch_vt == 0)
         return .focusUp
     } else if action.focus_primary {
-        assert(!action.sink)
-        assert(!action.swap_down)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(!action.next_layout)
-        assert(action.focus_output == 0)
-        assert(action.switch_vt == 0)
         return .focusPrimary
     } else if action.focus_output != 0 {
-        assert(!action.next_layout)
-        assert(!action.sink)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(action.switch_vt == 0)
         return .focusOutput(n: action.focus_output)
     }  else if action.swap_down {
-        assert(!action.next_layout)
-        assert(!action.sink)
-        assert(!action.swap_up)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(action.switch_vt == 0)
         return .swapDown
     }  else if action.swap_up {
-        assert(!action.next_layout)
-        assert(!action.sink)
-        assert(!action.swap_primary)
-        assert(!action.swap_workspaces)
-        assert(action.switch_vt == 0)
         return .swapUp
     }  else if action.swap_primary {
-        assert(!action.sink)
-        assert(!action.swap_workspaces)
-        assert(action.switch_vt == 0)
         return .swapPrimary
+    } else if action.shrink {
+        return .shrink
     } else if action.sink {
-        assert(!action.swap_workspaces)
-        assert(action.switch_vt == 0)
         return .sink
     }  else if action.swap_workspaces {
-        assert(action.switch_vt == 0)
         return .swapWorkspaces
     } else if action.next_layout {
-        assert(action.switch_vt == 0)
         return .nextLayout
     } else {
-        assert(action.switch_vt != 0)
         return .switchVt(n: action.switch_vt)
     }
 }
