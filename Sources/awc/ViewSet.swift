@@ -111,6 +111,11 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
         ViewSet(current: current, visible: visible, hidden: hidden, floating: self.floating)
     }
 
+    /// Replaces the layout on the current workspace with the given layout.
+    func replace(layout: L) -> ViewSet<L, View> {
+        self.replace(current: self.current.copy(workspace: self.current.workspace.replace(layout: layout)))
+    }
+
     func modify(_ f: (Stack<L.View>) -> Stack<L.View>?) -> ViewSet<L, View> {
         if let stack = self.current.workspace.stack {
             return self.replace(

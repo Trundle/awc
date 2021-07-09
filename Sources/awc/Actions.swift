@@ -47,11 +47,7 @@ extension Awc {
     internal func execute(action: Action) {
         switch action {
         case .execute(let cmd): executeCommand(cmd)
-        case .expand: 
-            self.modifyAndUpdate {
-                let nextLayout = $0.current.workspace.layout.expand()
-                return $0.replace(current: $0.current.copy(workspace: $0.current.workspace.replace(layout: nextLayout)))
-            }
+        case .expand: self.modifyAndUpdate { $0.replace(layout: $0.current.workspace.layout.expand()) }
         case .close: self.kill()
         case .configReload: self.reloadConfig()
         case .focusDown: self.modifyAndUpdate { $0.modify { $0.focusDown() } }
@@ -65,15 +61,12 @@ extension Awc {
             let layout =  self.viewSet.current.workspace.layout
             let nextLayout = layout.nextLayout() ?? layout.firstLayout()
             self.modifyAndUpdate {
-                $0.replace(current: $0.current.copy(workspace: $0.current.workspace.replace(layout: nextLayout)))
+                $0.replace(layout: nextLayout)
             }
+        case .resetLayouts: self.modifyAndUpdate { $0.replace(layout: self.defaultLayout) }
         case .moveTo(let tag): self.modifyAndUpdate { $0.shift(tag: tag) }
         case .moveToOutput(let n): self.withOutput(n) { self.execute(action: .moveTo(tag: $0.workspace.tag)) }
-        case .shrink:
-            self.modifyAndUpdate {
-                let nextLayout = $0.current.workspace.layout.shrink()
-                return $0.replace(current: $0.current.copy(workspace: $0.current.workspace.replace(layout: nextLayout)))
-            }
+        case .shrink: self.modifyAndUpdate { $0.replace(layout: $0.current.workspace.layout.shrink()) }
         case .sink:
             self.withFocused { surface in
                 self.modifyAndUpdate {

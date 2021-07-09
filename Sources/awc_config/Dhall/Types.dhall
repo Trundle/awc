@@ -13,6 +13,7 @@ let Action =
       | SwapUp
       | SwapPrimary
       | NextLayout
+      | ResetLayouts
       | MoveTo : Text
       | MoveToOutput : Natural
       | SwapWorkspaces

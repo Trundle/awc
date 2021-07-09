@@ -36,6 +36,8 @@ public enum Action {
     /// Move focused surface to output n
     case moveToOutput(n: UInt8)
     case nextLayout
+    /// Reset the layouts on the current workspace to default
+    case resetLayouts
     /// Shrink the main area
     case shrink
     /// Push focused surface back into tiling
@@ -235,6 +237,7 @@ private func assertExactlyOneAction(_ action: AwcAction) {
         , action.focus_down
         , action.focus_up
         , action.focus_primary
+        , action.reset_layouts
         , action.shrink
         , action.sink
         , action.swap_down
@@ -288,6 +291,8 @@ private func toAction(_ action: AwcAction) -> Action {
         return .focusPrimary
     } else if action.focus_output != 0 {
         return .focusOutput(n: action.focus_output)
+    } else if action.reset_layouts {
+        return .resetLayouts
     }  else if action.swap_down {
         return .swapDown
     }  else if action.swap_up {
