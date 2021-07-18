@@ -1,12 +1,11 @@
-import Libawc
 import Wlroots
 
 public struct ViewAttribute: Hashable {
     internal let name: String
 
-    static let focused: ViewAttribute = "focused"
-    static let floating: ViewAttribute = "floating"
-    static let undecorated: ViewAttribute = "undecorated"
+    public static let focused: ViewAttribute = "focused"
+    public static let floating: ViewAttribute = "floating"
+    public static let undecorated: ViewAttribute = "undecorated"
 }
 
 extension ViewAttribute: ExpressibleByStringLiteral {
@@ -71,6 +70,9 @@ extension Layout {
 
 /// The simplest of all layouts: renders the focused surface fullscreen.
 public class Full<View, OutputData> : Layout {
+    public init() {
+    }
+
     public func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
         output: Output<L>,
@@ -217,7 +219,7 @@ public final class Rotated<L: Layout>: Layout {
 
     private let layout: L
 
-    init(layout: L) {
+    public init(layout: L) {
         self.layout = layout
     }
 

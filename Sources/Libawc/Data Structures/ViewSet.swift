@@ -1,4 +1,3 @@
-import Libawc
 import Wlroots
 
 public class Output<L: Layout> {
@@ -8,9 +7,7 @@ public class Output<L: Layout> {
     // The current surface arrangement
     public var arrangement: [(L.View, Set<ViewAttribute>, wlr_box)] = []
 
-    init(data: L.OutputData,
-         workspace: Workspace<L>
-    ) {
+    public init(data: L.OutputData, workspace: Workspace<L>) {
         self.data = data
         self.workspace = workspace
     }
@@ -35,7 +32,7 @@ public class Workspace<L: Layout> {
     public let layout: L
     public let stack: Stack<L.View>?
 
-    init(tag: String, layout: L, stack: Stack<L.View>? = nil) {
+    public init(tag: String, layout: L, stack: Stack<L.View>? = nil) {
         self.tag = tag
         self.layout = layout
         self.stack = stack
@@ -79,7 +76,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     // Mapping of untiled views to their boxes (location + size)
     public let floating: Map<L.View, wlr_box>
 
-    convenience init(current: Output<L>, hidden: [Workspace<L>] = []) {
+    public convenience init(current: Output<L>, hidden: [Workspace<L>] = []) {
         self.init(current: current, visible: [], hidden: hidden, floating: [:])
     }
 
@@ -95,15 +92,15 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
 
     // MARK: Convenience methods for updating state
 
-    func replace(current: Output<L>) -> ViewSet<L, View> {
+    public func replace(current: Output<L>) -> ViewSet<L, View> {
         ViewSet(current: current, visible: self.visible, hidden: self.hidden, floating: self.floating)
     }
 
-    func replace(floating: Map<L.View, wlr_box>) -> ViewSet<L, View> {
+    public func replace(floating: Map<L.View, wlr_box>) -> ViewSet<L, View> {
         ViewSet(current: self.current, visible: self.visible, hidden: self.hidden, floating: floating)
     }
 
-    func replace(
+    public func replace(
         current: Output<L>,
         visible: [Output<L>],
         hidden: [Workspace<L>]
@@ -112,11 +109,11 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Replaces the layout on the current workspace with the given layout.
-    func replace(layout: L) -> ViewSet<L, View> {
+    public func replace(layout: L) -> ViewSet<L, View> {
         self.replace(current: self.current.copy(workspace: self.current.workspace.replace(layout: layout)))
     }
 
-    func modify(_ f: (Stack<L.View>) -> Stack<L.View>?) -> ViewSet<L, View> {
+    public func modify(_ f: (Stack<L.View>) -> Stack<L.View>?) -> ViewSet<L, View> {
         if let stack = self.current.workspace.stack {
             return self.replace(
                 current: self.current.copy(workspace: self.current.workspace.replace(stack: f(stack))))
@@ -124,7 +121,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
         return self
     }
 
-    func modifyOr(default: @autoclosure () -> Stack<L.View>?, _ f: (Stack<L.View>) -> Stack<L.View>?) -> ViewSet<L, View> {
+    public func modifyOr(default: @autoclosure () -> Stack<L.View>?, _ f: (Stack<L.View>) -> Stack<L.View>?) -> ViewSet<L, View> {
         let withNewStack = { newStack in
             self.replace(current: self.current.copy(workspace: self.current.workspace.replace(stack: newStack)))
         }
@@ -136,7 +133,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Finds the output that displays the given view.
-    func findOutput(view: L.View) -> Output<L>? {
+    public func findOutput(view: L.View) -> Output<L>? {
         for output in self.outputs() {
             if let stack = output.workspace.stack {
                 if stack.contains(view) {
@@ -148,12 +145,12 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Finds the workspace that displays the given view.
-    func findWorkspace(view: L.View) -> Workspace<L>? {
+    public func findWorkspace(view: L.View) -> Workspace<L>? {
         self.workspaces().first(where: { $0.stack?.contains(view) == true })
     }
 
     /// Removes the given view, if it exists.
-    func remove(view: L.View) -> ViewSet<L, View> {
+    public func remove(view: L.View) -> ViewSet<L, View> {
         let removeFromWorkspace: (Workspace<L>) -> Workspace<L> = {
             $0.replace(stack: $0.stack?.remove(view))
         }
@@ -170,23 +167,23 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
 
     // MARK: Floating views
 
-    func float(view: L.View, box: wlr_box) -> ViewSet<L, View> {
+    public func float(view: L.View, box: wlr_box) -> ViewSet<L, View> {
         self.replace(floating: self.floating.updateValue(box, forKey: view))
     }
 
     /// Clears the view's floating status.
-    func sink(view: L.View) -> ViewSet<L, View> {
+    public func sink(view: L.View) -> ViewSet<L, View> {
         self.replace(floating: self.floating.removeValue(forKey: view))
     }
 
     // MARK:
 
     /// Performs the given action on the workspace with the given tag.
-    func onWorkspace(tag: String, _ f: (ViewSet<L, View>) -> ViewSet<L, View>) -> ViewSet<L, View> {
+    public func onWorkspace(tag: String, _ f: (ViewSet<L, View>) -> ViewSet<L, View>) -> ViewSet<L, View> {
         f(self.view(tag: tag)).view(tag: self.current.workspace.tag)
     }
 
-    func focus(view: L.View) -> ViewSet<L, View> {
+    public func focus(view: L.View) -> ViewSet<L, View> {
         guard self.peek() != view else {
             return self
         }
@@ -198,7 +195,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
         }
     }
 
-    func focusMain() -> ViewSet<L, View> {
+    public func focusMain() -> ViewSet<L, View> {
         self.modify {
             switch $0.up.reverse() {
             case .empty: return $0
@@ -208,13 +205,13 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Returns the focused element of the current stack (if there is one).
-    func peek() -> L.View? {
+    public func peek() -> L.View? {
         self.current.workspace.stack?.focus
     }
 
     /// Moves the current stack's focused element to the workspace with the given tag. Doesn't
     /// change the current workspace.
-    func shift(tag: String) -> ViewSet<L, View> {
+    public func shift(tag: String) -> ViewSet<L, View> {
         guard let focus = self.peek() else {
             return self
         }
@@ -249,11 +246,11 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     /// Returns an array of all workspaces contained in this view set.
-    func workspaces() -> [Workspace<L>] {
+    public func workspaces() -> [Workspace<L>] {
         [self.current.workspace] + self.visible.map { $0.workspace } + self.hidden
     }
 
-    func outputs() -> ViewSetOutputIterator<L> {
+    public func outputs() -> ViewSetOutputIterator<L> {
         ViewSetOutputIterator(self)
     }
 
@@ -317,7 +314,7 @@ public class Map<K: Hashable, V>: ExpressibleByDictionaryLiteral {
         return newMap
     }
 
-    subscript(key: K) -> V? {
+    public subscript(key: K) -> V? {
         get {
             self.dict[key]
         }

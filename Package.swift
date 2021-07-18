@@ -12,19 +12,23 @@ let package = Package(
     ],
     targets: [
         .target(name: "Wlroots"),
-        .target(name: "Libawc"),
+        .target(name: "Libawc", dependencies: ["awc_config", "Wlroots"]),
         .systemLibrary(name: "awc_config"),
         .target(
             name: "awc",
             dependencies: ["awc_config", "Libawc", "Wlroots"]),
         .testTarget(
             name: "awcTests",
-            dependencies: ["awc"]),
+            dependencies: ["awc"],
+            resources: [
+                .copy("Fixtures")
+            ]),
         .testTarget(
-                name: "awcConfigTests",
-                dependencies: ["awc_config", "Libawc"],
-                resources: [
-                    .copy("Fixtures")
-                ]),
+            name: "awcConfigTests",
+            dependencies: ["awc_config", "Libawc"],
+            resources: [
+                .copy("Fixtures")
+            ]),
+        .testTarget(name: "testHelpers", dependencies: ["awc_config"]),
     ]
 )

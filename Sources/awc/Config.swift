@@ -1,6 +1,7 @@
 import Foundation
 
 import awc_config
+import Libawc
 import Wlroots
 
 private extension AwcColor {
@@ -79,6 +80,7 @@ class Config {
     let activeBorderColor: float_rgba
     let inactiveBorderColor: float_rgba
     let outputConfigs: [String: (Int32, Int32, Float)]
+    let layout: AnyLayout<Surface, OutputDetails>
     private let displayErrorCmd: String
     private let buttonBindings: [ButtonActionKey: ButtonAction]
     private let keyBindings: [KeyActionKey: Action]
@@ -92,7 +94,8 @@ class Config {
         buttonBindings: [ButtonActionKey: ButtonAction],
         keyBindings: [KeyActionKey: Action],
         keyboardConfigs: [(KeyboardType, String)],
-        outputConfigs: [String: (Int32, Int32, Float)]
+        outputConfigs: [String: (Int32, Int32, Float)],
+        layout: AnyLayout<Surface, OutputDetails>
     ) {
         self.borderWidth = borderWidth
         self.activeBorderColor = activeBorderColor
@@ -102,6 +105,7 @@ class Config {
         self.keyBindings = keyBindings
         self.keyboardConfigs = keyboardConfigs
         self.outputConfigs = outputConfigs
+        self.layout = layout
     }
 
     func configureKeyboard(vendor: UInt32) -> String {
@@ -198,6 +202,13 @@ func loadConfig() -> Config? {
             (config.outputs[i].x, config.outputs[i].y, scale)
     }
 
+    guard let layout: AnyLayout<Surface, OutputDetails> = try? 
+        buildLayout(config.layout, config.number_of_layout_ops) 
+    else {
+        print("[ERROR] Invalid layout! Please use buildLayout")
+        return nil
+    }
+
     return Config(
         borderWidth: config.border_width,
         activeBorderColor: config.active_border_color.toFloatRgba(),
@@ -206,7 +217,8 @@ func loadConfig() -> Config? {
         buttonBindings: buttonBindings,
         keyBindings: keyBindings,
         keyboardConfigs: keyboardConfigs,
-        outputConfigs: outputConfigs
+        outputConfigs: outputConfigs,
+        layout: layout
     )
 }
 

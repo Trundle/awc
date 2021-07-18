@@ -8,7 +8,7 @@ use std::os::raw::c_char;
 
 // Intermediate structures
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 enum Action {
     Close,
     ConfigReload,
@@ -82,7 +82,7 @@ impl Action {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ButtonBinding {
     mods: Vec<AwcModifier>,
@@ -102,13 +102,13 @@ impl ButtonBinding {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 enum Key {
     Code(u32),
     Sym(String),
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KeyBinding {
     mods: Vec<AwcModifier>,
@@ -133,7 +133,7 @@ impl KeyBinding {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KeyboardConfig {
     layout: String,
@@ -149,7 +149,7 @@ impl KeyboardConfig {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OutputConfig {
     name: String,
@@ -169,7 +169,7 @@ impl OutputConfig {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Config {
     border_width: u32,
@@ -179,6 +179,7 @@ struct Config {
     button_bindings: Vec<ButtonBinding>,
     key_bindings: Vec<KeyBinding>,
     keyboards: Vec<KeyboardConfig>,
+    layout: Vec<AwcLayoutOp>,
     outputs: Vec<OutputConfig>,
 }
 
@@ -210,6 +211,10 @@ impl Config {
         let (keyboards, number_of_keyboards) = vec_into_raw(converted_keyboards);
         (*target).keyboards = keyboards;
         (*target).number_of_keyboards = number_of_keyboards;
+
+        let (layout, number_of_layout_ops) = vec_into_raw(self.layout);
+        (*target).layout = layout;
+        (*target).number_of_layout_ops = number_of_layout_ops;
 
         let converted_outputs = self
             .outputs
@@ -264,7 +269,7 @@ pub struct AwcColor {
     a: u8,
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[repr(C)]
 pub enum AwcModifier {
     Alt,
@@ -274,14 +279,14 @@ pub enum AwcModifier {
     Shift,
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[repr(C)]
 pub enum AwcButton {
     Left,
     Right,
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[repr(C)]
 pub enum AwcButtonAction {
     Move,
@@ -311,7 +316,7 @@ pub struct AwcKeyboardConfig {
     type_: AwcKeyboardType,
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[repr(C)]
 pub enum AwcKeyboardType {
     Builtin,
@@ -324,6 +329,17 @@ pub struct AwcOutputConfig {
     x: i32,
     y: i32,
     scale: f32,
+}
+
+/// cbindgen:prefix-with-name
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[repr(C)]
+pub enum AwcLayoutOp {
+    Choose,
+    Full,
+    TwoPane { split: f64, delta: f64 },
+    Rotated,
+    Push    
 }
 
 #[repr(C)]
@@ -341,6 +357,9 @@ pub struct AwcConfig {
 
     keyboards: *const AwcKeyboardConfig,
     number_of_keyboards: size_t,
+
+    layout: *const AwcLayoutOp,
+    number_of_layout_ops: size_t,
 
     outputs: *const AwcOutputConfig,
     number_of_outputs: size_t,
@@ -444,6 +463,11 @@ pub unsafe extern "C" fn awc_config_free(config: *mut AwcConfig) {
     ))
     .iter()
     .for_each(|keyboard| awc_config_str_free(keyboard.layout));
+
+    Box::from_raw(std::slice::from_raw_parts_mut(
+        (*config).layout as *mut AwcLayoutOp,
+        (*config).number_of_layout_ops,
+    ));
 
     Box::from_raw(std::slice::from_raw_parts_mut(
         (*config).outputs as *mut AwcOutputConfig,

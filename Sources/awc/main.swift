@@ -2,6 +2,7 @@
 // A Wayland Compositor
 //
 
+import Libawc
 import Wlroots
 
 
@@ -46,9 +47,6 @@ public class OutputDetails {
     }
 }
 
-public protocol ExtensionDataProvider {
-    func getExtensionData<D>() -> D?
-}
 
 public typealias RenderSurfaceHook<L: Layout> =
     (UnsafeMutablePointer<wlr_renderer>, Output<L>, Surface, Set<ViewAttribute>, wlr_box) -> ()
@@ -841,10 +839,7 @@ func main() {
         return
     }
 
-    let full = Full<Surface, OutputDetails>()
-    let twoPane = TwoPane<Surface, OutputDetails>(split: 0.5, delta: 0.025)
-    let layouts = full ||| twoPane ||| Rotated(layout: twoPane)
-    let layout = LayerLayout(wrapped: BorderShrinkLayout(borderWidth: config.borderWidth, layout: layouts))
+    let layout = LayerLayout(wrapped: BorderShrinkLayout(borderWidth: config.borderWidth, layout: config.layout))
     let awc = Awc(
         wlEventHandler: wlEventHandler,
         wlDisplay: wlDisplay,

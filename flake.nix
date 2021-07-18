@@ -69,6 +69,9 @@
           pixman
           libGL
           xorg.libxcb
+
+          dhall
+          dhall-lsp-server
         ];
 
         shellHook = ''

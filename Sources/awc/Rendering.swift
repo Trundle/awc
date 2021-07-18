@@ -1,3 +1,4 @@
+import Libawc
 import Wlroots
 
 internal func renderSurface(
