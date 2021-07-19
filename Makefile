@@ -51,6 +51,7 @@ awc: Sources/awc_config/libawc_config.so Sources/Wlroots/xdg-shell-protocol.h So
 
 test: awc
 	swift test \
+	    --enable-code-coverage --enable-test-discovery \
 	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
 		-Xlinker -LSources/awc_config/target/release/ \
 		-Xlinker -lawc_config -Xlinker -rpath -Xlinker `pwd`/Sources/awc_config \
