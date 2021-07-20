@@ -90,6 +90,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let renderSurfaceHook: RenderSurfaceHook<L>
     let viewAtHook: ViewAtHook<L>
     let defaultLayout: L
+    let layoutWrapper: (AnyLayout<L.View, L.OutputData>) -> L
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
@@ -116,6 +117,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         seat: UnsafeMutablePointer<wlr_seat>,
         idle: UnsafeMutablePointer<wlr_idle>,
         layout: L,
+        layoutWrapper: @escaping (AnyLayout<L.View, L.OutputData>) -> L,
         renderSurfaceHook: @escaping RenderSurfaceHook<L>,
         viewAtHook: @escaping ViewAtHook<L>,
         config: Config
@@ -148,6 +150,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.viewAtHook = viewAtHook
         self.config = config
         self.defaultLayout = layout
+        self.layoutWrapper = layoutWrapper
     }
 
     public func run() {
@@ -839,7 +842,9 @@ func main() {
         return
     }
 
-    let layout = LayerLayout(wrapped: BorderShrinkLayout(borderWidth: config.borderWidth, layout: config.layout))
+    typealias LayerAndBorderLayout = LayerLayout<BorderShrinkLayout<AnyLayout<Surface, OutputDetails>>>
+    let layoutWrapper: (AnyLayout<Surface, OutputDetails>) -> LayerAndBorderLayout =
+        { LayerLayout(wrapped: BorderShrinkLayout(borderWidth: config.borderWidth, layout: $0)) }
     let awc = Awc(
         wlEventHandler: wlEventHandler,
         wlDisplay: wlDisplay,
@@ -851,7 +856,8 @@ func main() {
         cursorManager: cursorManager!,
         seat: seat!,
         idle: idle,
-        layout: layout,
+        layout: layoutWrapper(config.layout),
+        layoutWrapper: layoutWrapper,
         renderSurfaceHook: smartBorders(
             borderWidth: config.borderWidth,
             activeBorderColor: config.activeBorderColor,

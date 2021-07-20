@@ -106,6 +106,14 @@ extension Awc {
         if let config = loadConfig() {
             // XXX This doesn't reload everything (e.g. border width)
             self.config = config
+            let layout = self.layoutWrapper(config.layout)
+            self.modifyAndUpdate { viewSet in
+                viewSet.replace(
+                    current: viewSet.current.copy(workspace: viewSet.current.workspace.replace(layout: layout)),
+                    visible: viewSet.visible.map { $0.copy(workspace: $0.workspace.replace(layout: layout)) },
+                    hidden: viewSet.hidden.map { $0.replace(layout: layout) }
+                )
+            }
             print("[INFO] Reloaded config!")
         } else {
             executeCommand(self.config.generateErrorDisplayCmd(msg: "Reloading config failed :("))
