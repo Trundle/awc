@@ -629,6 +629,12 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
     public typealias View = WrappedLayout.View
     public typealias OutputData = WrappedLayout.OutputData
 
+    public var description: String {
+        get {
+            self.wrapped.description
+        }
+    }
+
     fileprivate let data: LayerShellData
     private let wrapped: WrappedLayout
 

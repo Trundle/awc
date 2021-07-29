@@ -882,6 +882,9 @@ func main() {
     // Set up decorations: Wayland knows server-side and client-side decorations. We provide server-side decorations.
     setUpDecorations(wlDisplay: wlDisplay, awc: awc)
 
+    // Set up ctl socket
+    let ctlServer = try! setUpCtlListeningSocket(awc: awc)
+
     runAutostart()
 
     // Run the Wayland event loop. This does not return until you exit the
@@ -892,6 +895,7 @@ func main() {
     awc.run()
 
     // Once wl_display_run returns, we shut down the server.
+    ctlServer.stop()
     wl_display_destroy_clients(wlDisplay)
     wl_display_destroy(wlDisplay)
 }

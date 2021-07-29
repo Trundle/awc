@@ -12,6 +12,12 @@ public protocol AnyLayoutMapper {
 
 /// A wrapper for some `Layout` that is only parametrized over `View` and `OutputData`.
 public class AnyLayout<View, OutputData>: Layout {
+    public var description: String {
+        get {
+            fatalError()
+        }
+    }
+
     public func flatMap<M: AnyLayoutMapper>(_ mapper: M) -> AnyLayout<View, OutputData>
     where M.View == View, M.OutputData == OutputData
     {
@@ -61,6 +67,12 @@ public extension AnyLayout {
 }
 
 private final class AnyLayoutImpl<L: Layout>: AnyLayout<L.View, L.OutputData> {
+    override public var description: String {
+        get {
+            wrapped.description
+        }
+    }
+
     private let wrapped: L
 
     init(_ wrapped: L) {

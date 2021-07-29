@@ -11,6 +11,12 @@ final class BorderShrinkLayout<Wrapped: Layout>: Layout {
     public typealias View = Wrapped.View
     public typealias OutputData = Wrapped.OutputData
 
+    public var description: String {
+        get {
+            self.layout.description
+        }
+    }
+
     private let borderWidth: UInt32
     private let layout: Wrapped
 

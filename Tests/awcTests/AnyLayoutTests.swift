@@ -9,6 +9,12 @@ final class TestLayout: Layout {
     typealias View = TestView
     typealias OutputData = ()
 
+    var description: String {
+        get {
+            "TestLayout"
+        }
+    }
+
     var emptyLayoutCalled: Bool = false
     var doLayoutCalled: Bool = false
     var firstLayoutCalled: Bool = false

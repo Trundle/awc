@@ -19,6 +19,8 @@ public protocol Layout {
     /// Type that is used by `Output`s to manage their state.
     associatedtype OutputData
 
+    var description: String { get }
+
     /// Called when there are no views.
     func emptyLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
@@ -70,6 +72,8 @@ extension Layout {
 
 /// The simplest of all layouts: renders the focused surface fullscreen.
 public class Full<View, OutputData> : Layout {
+    public let description: String = "Full"
+
     public init() {
     }
 
@@ -87,6 +91,8 @@ public class Full<View, OutputData> : Layout {
 /// the main window, and the right is either the currently focused window or the second window in
 /// layout order.
 public final class TwoPane<View, OutputData>: Layout {
+    public let description: String = "TwoPane"
+
     private let split: Double
     private let delta: Double
 
@@ -126,6 +132,15 @@ public final class Choose<Left: Layout, Right: Layout>: Layout
 {
     public typealias View = Left.View
     public typealias OutputData = Left.OutputData
+
+    public var description: String {
+        get {
+            switch self.current {
+            case .left: return self.left.description
+            case .right: return self.right.description
+            }
+        }
+    }
 
     private enum Branch {
         case left
@@ -216,6 +231,12 @@ func |||<L: Layout, R: Layout>(left: L, right: R) -> Choose<L, R> where L.View =
 public final class Rotated<L: Layout>: Layout {
     public typealias View = L.View
     public typealias OutputData = L.OutputData
+
+    public var description: String {
+        get {
+            "Rotated(\(layout.description))"
+        }
+    }
 
     private let layout: L
 

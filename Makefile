@@ -39,7 +39,12 @@ Sources/awc_config/libawc_config.h: Sources/awc_config/src/lib.rs
 Sources/awc_config/libawc_config.so: Sources/awc_config/src/lib.rs Sources/awc_config/libawc_config.h
 	cd Sources/awc_config && cargo build --release
 
-awc: Sources/awc_config/libawc_config.so Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h
+Sources/awcctl/target/release/awcctl: Sources/awcctl/src/main.rs
+	cd Sources/awcctl && cargo build --release
+
+awc: Sources/awc_config/libawc_config.so \
+  Sources/awcctl/target/release/awcctl \
+  Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h
 	swift build \
 	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
 		-Xcc -ISources/awc_config \
