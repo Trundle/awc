@@ -19,30 +19,6 @@
       };
 
       rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain;
-
-      swift = pkgs.callPackage ./nixos/swift.nix { };
-
-      swift-env = pkgs.writeShellScriptBin "swift-env" ''
-        denylist="/nix /dev /usr"
-        mounts=""
-        for dir in /*; do
-            if [[ -d "$dir" ]] && grep -v "$dir" <<< "$denylist" >/dev/null; then
-                mounts="$mounts --bind $dir $dir"
-            fi
-        done
-        for bin in /usr/bin/*; do
-            mounts="$mounts --bind $bin $bin"
-        done
-        exec ${pkgs.bubblewrap}/bin/bwrap \
-             --dev-bind /dev /dev \
-             --ro-bind /nix /nix \
-             --symlink $(dirname $(which swiftc))/../include /usr/include \
-             --symlink ${pkgs.clang}/bin/clang /usr/bin/clang \
-             --bind /proc /proc \
-             --bind /sys /sys \
-             $mounts \
-             "$@"
-      '';
     in
     {
       devShell.x86_64-linux = pkgs.mkShell {
@@ -53,8 +29,6 @@
           rust
           rust-analyzer
           rust-cbindgen
-          swift
-          swift-env
         ];
 
         buildInputs = with pkgs; [
@@ -73,11 +47,6 @@
           dhall
           dhall-lsp-server
         ];
-
-        shellHook = ''
-            export PATH="$PATH:${swift}/usr/bin"
-            export CC=clang
-        '';
       };
     };
 }
