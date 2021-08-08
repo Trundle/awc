@@ -103,7 +103,7 @@ extension Awc {
     }
 
     private func reloadConfig() {
-        if let config = loadConfig() {
+        if let config = loadConfig(path: self.config.path) {
             // XXX This doesn't reload everything (e.g. border width)
             self.config = config
             let layout = self.layoutWrapper(config.layout)

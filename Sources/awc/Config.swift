@@ -76,6 +76,7 @@ private struct KeyActionKey: Hashable {
 }
 
 class Config {
+    let path: String?
     let borderWidth: UInt32
     let activeBorderColor: float_rgba
     let inactiveBorderColor: float_rgba
@@ -87,6 +88,7 @@ class Config {
     private let keyboardConfigs: [(KeyboardType, String)]
 
     fileprivate init(
+        path: String?,
         borderWidth: UInt32,
         activeBorderColor: float_rgba,
         inactiveBorderColor: float_rgba,
@@ -97,6 +99,7 @@ class Config {
         outputConfigs: [String: (Int32, Int32, Float)],
         layout: AnyLayout<Surface, OutputDetails>
     ) {
+        self.path = path
         self.borderWidth = borderWidth
         self.activeBorderColor = activeBorderColor
         self.inactiveBorderColor = inactiveBorderColor
@@ -138,10 +141,10 @@ class Config {
     }
 }
 
-func loadConfig() -> Config? {
+func loadConfig(path: String?) -> Config? {
     var config = AwcConfig()
 
-    if let error = awc_config_load(nil, &config) {
+    if let error = awc_config_load(path, &config) {
         print("[FATAL] Could not load config: \(String(cString: error))")
         awc_config_str_free(error)
         return nil
@@ -210,6 +213,7 @@ func loadConfig() -> Config? {
     }
 
     return Config(
+        path: path,
         borderWidth: config.border_width,
         activeBorderColor: config.active_border_color.toFloatRgba(),
         inactiveBorderColor: config.inactive_border_color.toFloatRgba(),

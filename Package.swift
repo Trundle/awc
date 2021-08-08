@@ -10,13 +10,21 @@ let package = Package(
         .library(name: "Libawc", targets: ["Libawc"]),
         .library(name: "Wlroots", type: .dynamic, targets: ["Wlroots"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-argument-parser", .upToNextMinor(from: "0.4.0")),
+    ],
     targets: [
         .target(name: "Wlroots"),
         .target(name: "Libawc", dependencies: ["awc_config", "Wlroots"]),
         .systemLibrary(name: "awc_config"),
         .target(
             name: "awc",
-            dependencies: ["awc_config", "Libawc", "Wlroots"]),
+            dependencies: [
+                "awc_config", 
+                "Libawc", 
+                "Wlroots",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]),
         .testTarget(
             name: "awcTests",
             dependencies: ["awc"],

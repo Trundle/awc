@@ -743,6 +743,9 @@ extension Awc: OutputDamage {
 
 func main() {
     wlr_log_init(WLR_DEBUG, nil)
+
+    let args = AwcArguments.parseOrExit()
+
     // The Wayland display is managed by libwayland. It handles accepting clients from the Unix
     // socket, managing Wayland globals, and so on.
     guard let wlDisplay = wl_display_create() else {
@@ -832,7 +835,7 @@ func main() {
 
     wlr_gamma_control_manager_v1_create(wlDisplay)
 
-    guard let config = loadConfig() else {
+    guard let config = loadConfig(path: args.configPath) else {
         print("[FATAL] Could not load configuration")
         return
     }
