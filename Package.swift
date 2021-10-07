@@ -18,10 +18,14 @@ let package = Package(
         .target(name: "Wlroots"),
         .target(name: "Libawc", dependencies: ["awc_config", "Wlroots"]),
         .systemLibrary(name: "awc_config"),
+        .systemLibrary(name: "Cairo"),
+        .systemLibrary(name: "Drm"),
         .target(
             name: "awc",
             dependencies: [
                 "awc_config", 
+                "Cairo",
+                "Drm",
                 "Libawc", 
                 "Wlroots",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),

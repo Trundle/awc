@@ -120,6 +120,14 @@ extension Awc {
 
             wlr_output_damage_add_whole(output.data.damage)
         }
+        if self.outputHudVisible {
+            self.viewSet.current.data.hud?.update(
+                output: self.viewSet.current, 
+                renderer: self.renderer, 
+                font: self.config.font, 
+                config: self.config.outputHudConfig
+            )
+        }
     }
 
     /// Kills the currently focused surface.

@@ -96,6 +96,16 @@ extension Surface {
 }
 
 extension Surface {
+    var title: String  {
+        get {
+            switch self {
+            case .layer: return ""
+            case .xdg(let surface): return String(cString: surface.pointee.toplevel.pointee.title)
+            case .xwayland(let surface): return String(cString: surface.pointee.title)
+            }
+        }
+    }
+
     var wlrSurface: UnsafeMutablePointer<wlr_surface> {
         get {
             switch self {

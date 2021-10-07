@@ -43,6 +43,13 @@ let KeyBinding = { mods : List Modifier, key : Key, action : Action }
 let ButtonBinding =
       { mods : List Modifier, button : Button, action : ButtonAction }
 
+let OutputHud =
+      { activeBackgroundColor : Color
+      , activeForegroundColor : Color
+      , inactiveBackgroundColor : Color
+      , inactiveForegroundColor : Color
+      }
+
 let Layout
     : Type
     = ∀(Layout : Type) →
@@ -155,6 +162,9 @@ let Config =
           , buttonBindings : List ButtonBinding
           , keyBindings : List KeyBinding
           , displayErrorCmd : Text
+          , font : Text
+          , modifier : Modifier
+          , outputHud : OutputHud
           }
       , default =
         { borderWidth = 2
@@ -167,6 +177,14 @@ let Config =
         , buttonBindings = [] : List ButtonBinding
         , keyBindings = [] : List KeyBinding
         , displayErrorCmd = "swaynag -m "
+        , font = "PragmataPro Mono Liga"
+        , modifier = Modifier.Logo
+        , outputHud =
+          { activeBackgroundColor = { r = 0x2a, g = 0x9d, b = 0x8f, a = 0xb2 }
+          , activeForegroundColor = { r = 0xff, g = 0xff, b = 0xff, a = 0xff }
+          , inactiveBackgroundColor = { r = 0xe9, g = 0xc4, b = 0x6a, a = 0xb2 }
+          , inactiveForegroundColor = { r = 0x26, g = 0x46, b = 0x53, a = 0xff }
+          }
         }
       }
 

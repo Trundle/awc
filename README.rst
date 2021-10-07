@@ -74,6 +74,7 @@ Dependencies
 * Rust
 * Swift 5.3 (or newer)
 * GLESv2
+* libdrm
 * libinput
 * pixman
 * pkg-config

@@ -82,7 +82,10 @@ class Config {
     let borderWidth: UInt32
     let activeBorderColor: float_rgba
     let inactiveBorderColor: float_rgba
+    let font: String
+    let modifier: KeyModifiers
     let outputConfigs: [String: (Int32, Int32, Float)]
+    let outputHudConfig: AwcOutputHudConfig
     let layout: AnyLayout<Surface, OutputDetails>
     private let displayErrorCmd: String
     private let buttonBindings: [ButtonActionKey: ButtonAction]
@@ -95,10 +98,13 @@ class Config {
         activeBorderColor: float_rgba,
         inactiveBorderColor: float_rgba,
         displayErrorCmd: String,
+        font: String,
+        modifier: KeyModifiers,
         buttonBindings: [ButtonActionKey: ButtonAction],
         keyBindings: [KeyActionKey: Action],
         keyboardConfigs: [(KeyboardType, String)],
         outputConfigs: [String: (Int32, Int32, Float)],
+        outputHudConfig: AwcOutputHudConfig,
         layout: AnyLayout<Surface, OutputDetails>
     ) {
         self.path = path
@@ -106,10 +112,13 @@ class Config {
         self.activeBorderColor = activeBorderColor
         self.inactiveBorderColor = inactiveBorderColor
         self.displayErrorCmd = displayErrorCmd
+        self.font = font
+        self.modifier = modifier
         self.buttonBindings = buttonBindings
         self.keyBindings = keyBindings
         self.keyboardConfigs = keyboardConfigs
         self.outputConfigs = outputConfigs
+        self.outputHudConfig = outputHudConfig
         self.layout = layout
     }
 
@@ -220,10 +229,13 @@ func loadConfig(path: String?) -> Config? {
         activeBorderColor: config.active_border_color.toFloatRgba(),
         inactiveBorderColor: config.inactive_border_color.toFloatRgba(),
         displayErrorCmd: String(cString: config.display_error_cmd),
+        font: String(cString: config.font),
+        modifier: toKeyModifiers(config.modifier),
         buttonBindings: buttonBindings,
         keyBindings: keyBindings,
         keyboardConfigs: keyboardConfigs,
         outputConfigs: outputConfigs,
+        outputHudConfig: config.output_hud,
         layout: layout
     )
 }
@@ -232,19 +244,24 @@ private func toKeyModifiers(_ mods: UnsafePointer<AwcModifier>?, _ numberOfMods:
     var result = KeyModifiers()
     for i in 0..<numberOfMods {
         let mod = mods![i]
-        if mod == Alt {
-            result.insert(.alt)
-        } else if mod == Ctrl {
-            result.insert(.ctrl)
-        } else if mod == Logo {
-            result.insert(.logo)
-        } else if mod == Mod5 {
-            result.insert(.mod5)
-        } else if mod == Shift {
-            result.insert(.shift)
-        }
+        result.insert(toKeyModifiers(mod))
     }
     return result
+}
+
+private func toKeyModifiers(_ mod: AwcModifier) -> KeyModifiers {
+    if mod == Alt {
+        return .alt
+    } else if mod == Ctrl {
+        return .ctrl
+    } else if mod == Logo {
+        return .logo
+    } else if mod == Mod5 {
+        return .mod5
+    } else if mod == Shift {
+        return .shift
+    }
+    fatalError("Unknown modifier: \(mod)")
 }
 
 private func assertExactlyOneAction(_ action: AwcAction) {

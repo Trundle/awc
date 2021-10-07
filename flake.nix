@@ -37,15 +37,19 @@
           wayland
           wayland-protocols
           wlroots
+          libdrm
           libxkbcommon
           libudev
           libevdev
           pixman
           libGL
           xorg.libxcb
+          cairo
 
           dhall
           dhall-lsp-server
+
+          swift
         ];
       };
     };

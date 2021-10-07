@@ -178,12 +178,15 @@ struct Config {
     border_width: u32,
     active_border_color: AwcColor,
     inactive_border_color: AwcColor,
+    font: String,
+    modifier: AwcModifier,
     display_error_cmd: String,
     button_bindings: Vec<ButtonBinding>,
     key_bindings: Vec<KeyBinding>,
     keyboards: Vec<KeyboardConfig>,
     layout: Vec<AwcLayoutOp>,
     outputs: Vec<OutputConfig>,
+    output_hud: AwcOutputHudConfig,
 }
 
 impl Config {
@@ -229,9 +232,12 @@ impl Config {
         (*target).number_of_outputs = number_of_outputs;
 
         (*target).display_error_cmd = str_to_c_char(&self.display_error_cmd, "displayErrorCmd")?;
+        (*target).font = str_to_c_char(&self.font, "font")?;
+        (*target).modifier = self.modifier;
         (*target).border_width = self.border_width;
         (*target).active_border_color = self.active_border_color;
         (*target).inactive_border_color = self.inactive_border_color;
+        (*target).output_hud = self.output_hud;
 
         Ok(())
     }
@@ -335,6 +341,16 @@ pub struct AwcOutputConfig {
     scale: f32,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(C)]
+pub struct AwcOutputHudConfig {
+    active_background_color: AwcColor,
+    active_foreground_color: AwcColor,
+    inactive_background_color: AwcColor,
+    inactive_foreground_color: AwcColor,
+}
+
 /// cbindgen:prefix-with-name
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[repr(C)]
@@ -352,6 +368,9 @@ pub struct AwcConfig {
     inactive_border_color: AwcColor,
     border_width: u32,
     display_error_cmd: *const c_char,
+    font: *const c_char,
+    modifier: AwcModifier,
+    output_hud: AwcOutputHudConfig,
 
     button_bindings: *const AwcButtonBinding,
     number_of_button_bindings: size_t,

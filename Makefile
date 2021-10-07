@@ -8,7 +8,9 @@ LIBS_CFLAGS=\
 	 $(shell pkg-config --cflags glesv2) \
 	 $(shell pkg-config --cflags pixman-1) \
 	 $(shell pkg-config --cflags xcb) \
-	 $(shell pkg-config --cflags openssl)
+	 $(shell pkg-config --cflags openssl) \
+	 $(shell pkg-config --cflags cairo) \
+	 $(shell pkg-config --cflags libdrm)
 LIBS=\
 	 $(shell pkg-config --libs wlroots) \
 	 $(shell pkg-config --libs wayland-server) \
@@ -17,7 +19,8 @@ LIBS=\
 	 $(shell pkg-config --libs glesv2) \
 	 $(shell pkg-config --libs pixman-1) \
 	 $(shell pkg-config --libs xcb) \
-	 $(shell pkg-config --libs openssl)
+	 $(shell pkg-config --libs openssl) \
+	 $(shell pkg-config --libs cairo)
 
 # wayland-scanner is a tool which generates C headers and rigging for Wayland
 # protocols, which are specified in XML. wlroots requires you to rig these up

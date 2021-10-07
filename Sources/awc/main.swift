@@ -27,6 +27,7 @@ public class OutputDetails {
     public let output: UnsafeMutablePointer<wlr_output>
     public let outputLayout: UnsafeMutablePointer<wlr_output_layout>?
     public let damage: UnsafeMutablePointer<wlr_output_damage>
+    public let hud: OutputHud?
 
     init(wlrOutput: UnsafeMutablePointer<wlr_output>,
          outputLayout: UnsafeMutablePointer<wlr_output_layout>?,
@@ -35,6 +36,11 @@ public class OutputDetails {
         self.output = wlrOutput
         self.outputLayout = outputLayout
         self.damage = damage
+        if outputLayout != nil {
+            self.hud = OutputHud()
+        } else {
+            self.hud = nil
+        }
     }
 
     var box: wlr_box {
@@ -81,7 +87,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let wlDisplay: OpaquePointer
     let backend: UnsafeMutablePointer<wlr_backend>
     let outputLayout: UnsafeMutablePointer<wlr_output_layout>
-    private let renderer: UnsafeMutablePointer<wlr_renderer>
+    let renderer: UnsafeMutablePointer<wlr_renderer>
     let noOpOutput: UnsafeMutablePointer<wlr_output>
     let noOpOutputDamage: UnsafeMutablePointer<wlr_output_damage>
     let cursor: UnsafeMutablePointer<wlr_cursor>
@@ -104,7 +110,9 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     internal var surfaces: [UnsafeMutablePointer<wlr_surface>: (Double, Double)] = [:]
     // An exclusive client that receives all input, if there is one (see wlroot's input inhibit protocol)
     internal var exclusiveClient: OpaquePointer? = nil
-        internal var config: Config
+    // Whether the "output HUD" is visible
+    internal var outputHudVisible: Bool = false
+    internal var config: Config
 
     init(
         wlEventHandler: WlEventHandler,
@@ -392,15 +400,16 @@ extension Awc {
     private func handleNewOutput(_ wlrOutput: UnsafeMutablePointer<wlr_output>) {
         let name = toString(array: wlrOutput.pointee.name)
 
+        if let (_, _, scale) = self.config.outputConfigs[name] {
+            wlr_output_set_scale(wlrOutput, scale)
+        }
+
         // Some backends don't have modes. DRM+KMS does, and we need to set a mode
         // before we can use the output. The mode is a tuple of (width, height,
         // refresh rate), and each monitor supports only a specific set of modes. We
         // just pick the monitor's preferred mode, a more sophisticated compositor
         // would let the user configure it.
         if wl_list_empty(&wlrOutput.pointee.modes) == 0 {
-            if let (_, _, scale) = self.config.outputConfigs[name] {
-                wlr_output_set_scale(wlrOutput, scale)
-            }
             let mode = wlr_output_preferred_mode(wlrOutput)
             wlr_output_set_mode(wlrOutput, mode)
             wlr_output_enable(wlrOutput, true)
@@ -568,6 +577,16 @@ extension Awc {
     }
 
     private func handleModifiers(_ device: UnsafeMutablePointer<wlr_input_device>) {
+        let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device.pointee.keyboard))
+        let modPressed = modifiers.contains(self.config.modifier)
+        if !modPressed && self.outputHudVisible {
+            wlr_output_damage_add_whole(self.viewSet.current.data.damage)
+            self.outputHudVisible = false
+        } else if modPressed && !self.outputHudVisible && self.exclusiveClient == nil {
+            self.outputHudVisible = true
+            self.updateLayout()
+        }
+
         // A seat can only have one keyboard, but this is a limitation of the
         // Wayland protocol - not wlroots. We assign all connected keyboards to the
         // same seat. You can swap out the underlying wlr_keyboard like this and
@@ -711,6 +730,10 @@ extension Awc: OutputDamage {
                     sy: sy
                 )
             }
+        }
+
+        if self.outputHudVisible && output.workspace.tag == self.viewSet.current.workspace.tag {
+            self.viewSet.current.data.hud?.render(on: output, with: self.renderer)
         }
     }
 
