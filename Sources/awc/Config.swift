@@ -26,9 +26,11 @@ public enum Action {
     case focusPrimary
     /// Focus output n
     case focusOutput(n: UInt8)
+    /// Bring the workspace with the given tag to the current output
+    case greedyView(tag: String)
     /// Swap the focused surface with the next surface
     case swapDown
-    //[ Swap the focused surface with the previous surface
+    /// Swap the focused surface with the previous surface
     case swapUp
     /// Swap the focused surface and the primary surface
     case swapPrimary
@@ -271,6 +273,7 @@ private func assertExactlyOneAction(_ action: AwcAction) {
 
     let stringArgAction: UnsafePointer<CChar>? =
         [ action.execute
+        , action.greedy_view
         , action.move_to
         , action.view
         ].reduce(nil, { assert($0 == nil || $1 == nil); return $0 ?? $1 })
@@ -307,6 +310,8 @@ private func toAction(_ action: AwcAction) -> Action {
         return .focusPrimary
     } else if action.focus_output != 0 {
         return .focusOutput(n: action.focus_output)
+    } else if let tag = action.greedy_view {
+        return .greedyView(tag: String(cString: tag))
     } else if action.reset_layouts {
         return .resetLayouts
     }  else if action.swap_down {

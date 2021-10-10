@@ -5,64 +5,6 @@ import Wlroots
 import testHelpers
 
 
-final class TestLayout: Layout {
-    typealias View = TestView
-    typealias OutputData = ()
-
-    var description: String {
-        get {
-            "TestLayout"
-        }
-    }
-
-    var emptyLayoutCalled: Bool = false
-    var doLayoutCalled: Bool = false
-    var firstLayoutCalled: Bool = false
-    var nextLayoutCalled: Bool = false
-    var expandCalled: Bool = false
-    var shrinkCalled: Bool = false
-
-    func emptyLayout<L: Layout>(
-        dataProvider: ExtensionDataProvider,
-        output: Output<L>,
-        box: wlr_box
-    ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where L.View == View, L.OutputData == OutputData {
-        self.emptyLayoutCalled = true
-        return []
-    }
-
-    func doLayout<L: Layout>(
-        dataProvider: ExtensionDataProvider,
-        output: Output<L>,
-        stack: Stack<L.View>,
-        box: wlr_box
-    ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where L.View == View, L.OutputData == OutputData {
-        self.doLayoutCalled = true
-        return []
-    }
-
-    func firstLayout() -> TestLayout {
-        self.firstLayoutCalled = true
-        return self
-    }
-    
-    func nextLayout() -> TestLayout? {
-        self.nextLayoutCalled = true
-        return nil
-    }
-    
-    func expand() -> TestLayout {
-        self.expandCalled = true
-        return self
-    }
-
-    func shrink() -> TestLayout {
-        self.shrinkCalled = true
-        return self
-    } 
-}
-
-
 public class AnyLayoutTests: XCTestCase {
     func testForwardsEmptyLayout() {
         let (layout, wrappedLayout) = self.createLayout()

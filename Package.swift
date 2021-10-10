@@ -12,6 +12,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", .upToNextMinor(from: "0.4.0")),
+        .package(url: "https://github.com/typelift/SwiftCheck.git", from: "0.12.0")
     ],
     targets: [
         .target(name: "Wlroots"),
@@ -33,7 +34,7 @@ let package = Package(
             ]),
         .testTarget(
             name: "awcConfigTests",
-            dependencies: ["awc_config", "Libawc"],
+            dependencies: ["awc_config", "Libawc", "SwiftCheck"],
             resources: [
                 .copy("Fixtures")
             ]),

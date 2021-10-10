@@ -38,6 +38,10 @@ public class Workspace<L: Layout> {
         self.stack = stack
     }
 
+    public func replace(tag: String) -> Workspace<L> {
+        Workspace(tag: tag, layout: self.layout, stack: self.stack)
+    }
+
     public func replace(layout: L) -> Workspace<L> {
         Workspace(tag: self.tag, layout: layout, stack: self.stack)
     }
@@ -66,7 +70,7 @@ extension Workspace: CustomStringConvertible {
 // swift::Lowering::AbstractionPattern, swift::CanType): Assertion `result && "substType was not
 // bindable to abstraction pattern type?"' failed.
 /// See https://bugs.swift.org/browse/SR-13849
-public class ViewSet<L: Layout, View: Hashable> where L.View == View {
+public final class ViewSet<L: Layout, View: Hashable> where L.View == View {
     // The output with the currently focused workspace
     public let current: Output<L>
     // Non-focused workspaces visible on outputs
@@ -80,6 +84,10 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
         self.init(current: current, visible: [], hidden: hidden, floating: [:])
     }
 
+    public convenience init(current: Output<L>, visible: [Output<L>], hidden: [Workspace<L>] = []) {
+        self.init(current: current, visible: visible, hidden: hidden, floating: [:])
+    }
+
     private init(current: Output<L>,
                  visible: [Output<L>],
                  hidden: [Workspace<L>],
@@ -91,6 +99,13 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
     }
 
     // MARK: Convenience methods for updating state
+
+    public func mapWorkspaces(_ f: (Workspace<L>) -> Workspace<L>) -> ViewSet<L, View> {
+        self.replace(
+            current: self.current.copy(workspace: f(self.current.workspace)),
+            visible: self.visible.map { $0.copy(workspace: f($0.workspace)) },
+            hidden: self.hidden.map(f))
+    }
 
     public func replace(current: Output<L>) -> ViewSet<L, View> {
         ViewSet(current: current, visible: self.visible, hidden: self.hidden, floating: self.floating)
@@ -225,6 +240,24 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
         }
     }
 
+    /// Sets the focus to the workspace with the given tag. If the workspace is already visible on another output, the
+    /// workspaces of that output and the current output are swapped.
+    public func greedyView(tag: String) -> ViewSet<L, View> {
+        if (self.hidden.contains(where: { $0.tag == tag })) {
+            // Workspace is hidden, we can use our regular view method
+            return self.view(tag: tag)
+        } else if let output = self.visible.first(where: { $0.workspace.tag == tag }) {
+            // Workspace is visible on another output, swap workspaces
+            return self.replace(
+                current: self.current.copy(workspace: output.workspace),
+                visible: self.visible.filter { $0 !== output } + [output.copy(workspace: self.current.workspace)],
+                hidden: self.hidden)
+        } else {
+            // Not contained in the ViewSet at all
+            return self
+        }
+    }
+
     /// Sets the focus to the workspace with the given tag. Returns self if the tag doesn't exist.
     public func view(tag: String) -> ViewSet<L, View> {
         if tag == self.current.workspace.tag {
@@ -240,7 +273,7 @@ public class ViewSet<L: Layout, View: Hashable> where L.View == View {
                 visible: self.visible,
                 hidden: self.hidden.filter { $0 !== workspace } + [self.current.workspace])
         } else {
-            // Not contained in the StackSet at all
+            // Not contained in the ViewSet at all
             return self
         }
     }

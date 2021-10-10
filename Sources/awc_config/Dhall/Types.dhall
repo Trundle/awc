@@ -11,6 +11,7 @@ let Action =
       | FocusUp
       | FocusPrimary
       | FocusOutput : Natural
+      | GreedyView : Text
       | Shrink
       | Sink
       | SwapDown

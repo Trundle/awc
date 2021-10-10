@@ -55,6 +55,7 @@ extension Awc {
         case .focusUp: self.modifyAndUpdate { $0.modify { $0.focusUp() } }
         case .focusPrimary: self.modifyAndUpdate { $0.focusMain() }
         case .focusOutput(let n): self.withOutput(n) { self.execute(action: .view(tag: $0.workspace.tag)) }
+        case .greedyView(let tag): self.modifyAndUpdate { $0.greedyView(tag: tag) }
         case .swapDown: self.modifyAndUpdate { $0.modify { $0.swapDown() } }
         case .swapUp: self.modifyAndUpdate { $0.modify { $0.swapUp() } }
         case .swapPrimary: self.modifyAndUpdate { $0.modify { $0.swapPrimary() } }
