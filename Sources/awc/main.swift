@@ -2,6 +2,7 @@
 // A Wayland Compositor
 //
 
+import Glibc
 import Libawc
 import Wlroots
 
