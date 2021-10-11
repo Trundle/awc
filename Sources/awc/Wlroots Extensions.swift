@@ -14,7 +14,9 @@ public struct float_rgba {
     public var a: Float
 
     mutating func withPtr<Result>(_ body: (UnsafePointer<Float>) -> Result) -> Result {
-        withUnsafePointer(to: &self.r, body)
+        withUnsafePointer(to: &self) {
+            $0.withMemoryRebound(to: Float.self, capacity: 4, body)
+        }
     }
 }
 
