@@ -38,6 +38,8 @@ let Modifier = < Alt | Ctrl | Logo | Mod5 | Shift >
 
 let Color = { r : Natural, g : Natural, b : Natural, a : Natural }
 
+let Direction = < Horizontal | Vertical >
+
 let KeyBinding = { mods : List Modifier, key : Key, action : Action }
 
 let ButtonBinding =
@@ -57,6 +59,7 @@ let Layout
         : { choose : Layout → Layout → Layout
           , full : Layout
           , twoPane : Double → Double → Layout
+          , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
           }
         ) →
@@ -71,6 +74,7 @@ let choose
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
           , twoPane : Double → Double → _Layout
+          , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
           }
         ) →
@@ -93,6 +97,7 @@ let full
         : { choose : Layout → Layout → Layout
           , full : Layout
           , twoPane : Double → Double → Layout
+          , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
           }
         ) →
@@ -107,10 +112,30 @@ let twoPane
         : { choose : Layout → Layout → Layout
           , full : Layout
           , twoPane : Double → Double → Layout
+          , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
           }
         ) →
         layout.twoPane split delta
+
+let reflected
+    : Direction → Layout → Layout
+    = λ(direction : Direction) →
+      λ(wrapped : Layout) →
+      λ(_Layout : Type) →
+      λ ( layout
+        : { choose : _Layout → _Layout → _Layout
+          , full : _Layout
+          , twoPane : Double → Double → _Layout
+          , reflected : Direction → _Layout → _Layout
+          , rotated : _Layout → _Layout
+          }
+        ) →
+        let adapt
+            : Layout → _Layout
+            = λ(x : Layout) → x _Layout layout
+
+        in  layout.reflected direction (adapt wrapped)
 
 let rotated
     : Layout → Layout
@@ -120,6 +145,7 @@ let rotated
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
           , twoPane : Double → Double → _Layout
+          , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
           }
         ) →
@@ -130,7 +156,12 @@ let rotated
         in  layout.rotated (adapt wrapped)
 
 let LayoutOp =
-      < Choose | Full | TwoPane : { split : Double, delta : Double } | Rotated >
+      < Choose
+      | Full
+      | TwoPane : { split : Double, delta : Double }
+      | Reflected : Direction
+      | Rotated
+      >
 
 let buildLayout
     : Layout → List LayoutOp
@@ -146,6 +177,10 @@ let buildLayout
               λ(split : Double) →
               λ(delta : Double) →
                 [ LayoutOp.TwoPane { split, delta } ]
+          , reflected =
+              λ(direction : Direction) →
+              λ(wrapped : List LayoutOp) →
+                wrapped # [ LayoutOp.Reflected direction ]
           , rotated =
               λ(wrapped : List LayoutOp) → wrapped # [ LayoutOp.Rotated ]
           }
@@ -194,6 +229,7 @@ in  { Action
     , ButtonBinding
     , Color
     , Config
+    , Direction
     , Key
     , KeyBinding
     , KeyboardType
@@ -202,6 +238,7 @@ in  { Action
     , buildLayout
     , choose
     , full
+    , reflected
     , rotated
     , twoPane
     }

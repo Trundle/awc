@@ -351,6 +351,13 @@ pub struct AwcOutputHudConfig {
     inactive_foreground_color: AwcColor,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[repr(C)]
+pub enum AwcDirection {
+    Horizontal,
+    Vertical
+}
+
 /// cbindgen:prefix-with-name
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[repr(C)]
@@ -358,6 +365,7 @@ pub enum AwcLayoutOp {
     Choose,
     Full,
     TwoPane { split: f64, delta: f64 },
+    Reflected(AwcDirection),
     Rotated,
     Push    
 }

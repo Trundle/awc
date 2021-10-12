@@ -64,7 +64,10 @@ public final class TestLayout: Layout {
     public var expandCalled: Bool = false
     public var shrinkCalled: Bool = false
 
-    public init() {
+    private let arrangementToReturn: [(TestView, Set<ViewAttribute>, wlr_box)]
+
+    public init(arrangementToReturn: [(TestView, Set<ViewAttribute>, wlr_box)] = []) {
+        self.arrangementToReturn = arrangementToReturn
     }
 
     public func emptyLayout<L: Layout>(
@@ -83,7 +86,7 @@ public final class TestLayout: Layout {
         box: wlr_box
     ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where L.View == View, L.OutputData == OutputData {
         self.doLayoutCalled = true
-        return []
+        return arrangementToReturn
     }
 
     public func firstLayout() -> TestLayout {

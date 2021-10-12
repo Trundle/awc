@@ -5,6 +5,18 @@ public enum ConfigError: Error {
     case invalidLayout
 }
 
+private class ReflectedMapper<View, OutputData>: AnyLayoutMapper {
+    private let direction: AwcDirection
+
+    init(direction: AwcDirection) {
+        self.direction = direction
+    }
+
+    func flatMap<L: Layout>(_ layout: L) -> AnyLayout<L.View, L.OutputData> {
+        AnyLayout.wrap(Reflected(layout: layout, direction: self.direction))
+    }
+}
+
 private class RotatedMapper<View, OutputData>: AnyLayoutMapper {
     func flatMap<L: Layout>(_ layout: L) -> AnyLayout<L.View, L.OutputData> {
         AnyLayout.wrap(Rotated(layout: layout))
@@ -59,6 +71,11 @@ public func buildLayout<View, OutputData>(_ op: UnsafePointer<AwcLayoutOp>, _ nu
         case AwcLayoutOp_TwoPane:
             let twoPane = currentOp.pointee.two_pane
             layouts.append(AnyLayout.wrap(TwoPane(split: twoPane.split, delta: twoPane.delta)))
+        case AwcLayoutOp_Reflected:
+            guard let layout = layouts.popLast() else {
+                throw ConfigError.invalidLayout
+            }
+            layouts.append(layout.flatMap(ReflectedMapper(direction: currentOp.pointee.reflected)))
         case AwcLayoutOp_Rotated:
             guard let layout = layouts.popLast() else {
                 throw ConfigError.invalidLayout
