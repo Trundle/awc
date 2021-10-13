@@ -87,6 +87,17 @@ extension Awc {
                     return $0
                 }
             }
+        case .swapWorkspaceTagWith(let tag):
+            self.modifyAndUpdate {
+                let currentTag = $0.current.workspace.tag
+                return $0.mapWorkspaces {
+                    switch $0.tag {
+                    case currentTag: return $0.replace(tag: tag)
+                    case tag: return $0.replace(tag: currentTag)
+                    default: return $0
+                    }
+                 }
+            }
         case .switchVt(let n):
             if let session = wlr_backend_get_session(self.backend) {
                 wlr_session_change_vt(session, UInt32(n))

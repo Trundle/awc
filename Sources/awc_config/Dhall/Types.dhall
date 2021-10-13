@@ -22,6 +22,7 @@ let Action =
       | MoveTo : Text
       | MoveToOutput : Natural
       | SwapWorkspaces
+      | SwapWorkspaceTagWith : Text
       | SwitchVT : Natural
       | View : Text
       >

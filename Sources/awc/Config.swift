@@ -47,6 +47,8 @@ public enum Action {
     case sink
     /// Swap workspaces on primary and secondary output
     case swapWorkspaces
+    /// Swaps the tags of the currently focused workspace and the workspace with the given tag
+    case swapWorkspaceTagWith(tag: String)
     case switchVt(n: UInt8)
     /// Switch to the workspace with the given tag
     case view(tag: String)
@@ -292,6 +294,7 @@ private func assertExactlyOneAction(_ action: AwcAction) {
         [ action.execute
         , action.greedy_view
         , action.move_to
+        , action.swap_workspace_tag_with
         , action.view
         ].reduce(nil, { assert($0 == nil || $1 == nil); return $0 ?? $1 })
 
@@ -343,6 +346,8 @@ private func toAction(_ action: AwcAction) -> Action {
         return .sink
     }  else if action.swap_workspaces {
         return .swapWorkspaces
+    } else if let tag = action.swap_workspace_tag_with {
+        return .swapWorkspaceTagWith(tag: String(cString: tag))
     } else if action.next_layout {
         return .nextLayout
     } else {

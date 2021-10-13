@@ -30,6 +30,7 @@ enum Action {
     SwitchVT(u8),
     NextLayout,
     SwapWorkspaces,
+    SwapWorkspaceTagWith(String),
     View(String),
 }
 
@@ -51,6 +52,7 @@ impl Action {
             swap_up: false,
             swap_primary: false,
             swap_workspaces: false,
+            swap_workspace_tag_with: std::ptr::null(),
             next_layout: false,
             reset_layouts: false,
             move_to: std::ptr::null(),
@@ -79,6 +81,8 @@ impl Action {
             Action::SwitchVT(vt) => action.switch_vt = *vt,
             Action::NextLayout => action.next_layout = true,
             Action::SwapWorkspaces => action.swap_workspaces = true,
+            Action::SwapWorkspaceTagWith(ws) =>
+                action.swap_workspace_tag_with = str_to_c_char(&ws, "swap workspace tag")?,
             Action::View(ws) => action.view = str_to_c_char(&ws, "view target")?,
         }
         Ok(action)
@@ -262,6 +266,7 @@ pub struct AwcAction {
     swap_up: bool,
     swap_primary: bool,
     swap_workspaces: bool,
+    swap_workspace_tag_with: *const c_char,
     next_layout: bool,
     reset_layouts: bool,
     move_to: *const c_char,
