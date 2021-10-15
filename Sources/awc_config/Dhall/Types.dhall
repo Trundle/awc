@@ -201,6 +201,7 @@ let Config =
           , font : Text
           , modifier : Modifier
           , outputHud : OutputHud
+          , workspaces : List Text
           }
       , default =
         { borderWidth = 2
@@ -221,6 +222,7 @@ let Config =
           , inactiveBackgroundColor = { r = 0xe9, g = 0xc4, b = 0x6a, a = 0xb2 }
           , inactiveForegroundColor = { r = 0x26, g = 0x46, b = 0x53, a = 0xff }
           }
+        , workspaces = [ "1", "2", "3", "4", "5", "6", "7", "8", "9" ]
         }
       }
 

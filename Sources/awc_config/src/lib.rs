@@ -191,6 +191,7 @@ struct Config {
     layout: Vec<AwcLayoutOp>,
     outputs: Vec<OutputConfig>,
     output_hud: AwcOutputHudConfig,
+    workspaces: Vec<String>,
 }
 
 impl Config {
@@ -234,6 +235,15 @@ impl Config {
         let (outputs, number_of_outputs) = vec_into_raw(converted_outputs);
         (*target).outputs = outputs;
         (*target).number_of_outputs = number_of_outputs;
+
+        let converted_workspaces = self
+            .workspaces
+            .iter()
+            .map(|w| str_to_c_char(&w, "workspace"))
+            .collect::<Result<Vec<*const c_char>, String>>()?;
+        let (workspaces, number_of_workspaces) = vec_into_raw(converted_workspaces);
+        (*target).workspaces = workspaces;
+        (*target).number_of_workspaces = number_of_workspaces;
 
         (*target).display_error_cmd = str_to_c_char(&self.display_error_cmd, "displayErrorCmd")?;
         (*target).font = str_to_c_char(&self.font, "font")?;
@@ -399,6 +409,9 @@ pub struct AwcConfig {
 
     outputs: *const AwcOutputConfig,
     number_of_outputs: size_t,
+
+    workspaces: *const *const c_char,
+    number_of_workspaces: size_t,
 }
 
 // ### Helpers ###

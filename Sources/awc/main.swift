@@ -132,7 +132,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         config: Config
     ) {
         let workspace: Workspace<L> = Workspace(
-            tag: "1",
+            tag: config.workspaces.first ?? "1",
             layout: layout
         )
         self.noOpOutputDamage = wlr_output_damage_create(noOpOutput)
@@ -141,8 +141,10 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
             workspace: workspace
         )
         var otherWorkspaces: [Workspace<L>] = []
-        for i in 2...9 {
-            otherWorkspaces.append(Workspace(tag: "\(i)", layout: layout))
+        if config.workspaces.count > 1 {
+            for tag in config.workspaces[1...] {
+                otherWorkspaces.append(Workspace(tag: tag, layout: layout))
+            }
         }
         self.viewSet = ViewSet(current: output, hidden: otherWorkspaces)
         self.wlDisplay = wlDisplay

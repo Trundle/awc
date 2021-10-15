@@ -48,7 +48,7 @@ Sources/awcctl/target/release/awcctl: Sources/awcctl/src/main.rs
 awc: Sources/awc_config/libawc_config.so \
   Sources/awcctl/target/release/awcctl \
   Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h
-	swift build \
+	swift build -c debug \
 	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
 		-Xcc -ISources/awc_config \
 		-Xlinker -LSources/awc_config/target/release/ \

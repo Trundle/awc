@@ -89,6 +89,7 @@ class Config {
     let outputConfigs: [String: (Int32, Int32, Float)]
     let outputHudConfig: AwcOutputHudConfig
     let layout: AnyLayout<Surface, OutputDetails>
+    let workspaces: [String]
     private let displayErrorCmd: String
     private let buttonBindings: [ButtonActionKey: ButtonAction]
     private let keyBindings: [KeyActionKey: Action]
@@ -107,7 +108,8 @@ class Config {
         keyboardConfigs: [(KeyboardType, String)],
         outputConfigs: [String: (Int32, Int32, Float)],
         outputHudConfig: AwcOutputHudConfig,
-        layout: AnyLayout<Surface, OutputDetails>
+        layout: AnyLayout<Surface, OutputDetails>,
+        workspaces: [String]
     ) {
         self.path = path
         self.borderWidth = borderWidth
@@ -122,6 +124,7 @@ class Config {
         self.outputConfigs = outputConfigs
         self.outputHudConfig = outputHudConfig
         self.layout = layout
+        self.workspaces = workspaces
     }
 
     func configureKeyboard(vendor: UInt32) -> String {
@@ -218,6 +221,11 @@ func loadConfig(path: String?) -> Config? {
             (config.outputs[i].x, config.outputs[i].y, scale)
     }
 
+    var workspaces: [String] = []
+    for i in 0..<config.number_of_workspaces {
+        workspaces.append(String(cString: config.workspaces[i]!))
+    }
+
     guard let layout: AnyLayout<Surface, OutputDetails> = try? 
         buildLayout(config.layout, config.number_of_layout_ops) 
     else {
@@ -238,7 +246,8 @@ func loadConfig(path: String?) -> Config? {
         keyboardConfigs: keyboardConfigs,
         outputConfigs: outputConfigs,
         outputHudConfig: config.output_hud,
-        layout: layout
+        layout: layout,
+        workspaces: workspaces
     )
 }
 
