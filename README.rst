@@ -48,8 +48,66 @@ You likely want to override the keybindings with some actions:
 For a list of available actions, see `Sources/awc_config/Dhall/Types.dhall
 <https://github.com/Trundle/awc/blob/main/Sources/awc_config/Dhall/Types.dhall>`_.
 
+A sample configuration can be found `here 
+<https://gist.github.com/Trundle/b46fdd5188e3908fb11dcbd68c2a04dd>`_.
+
 Note that reloading the configuration when running Awc currently doesn't affect
 all settings (e.g. border width).
+
+
+Supported layouts
+=================
+
+In general, awc maintains an order of views per workspace. The views of one
+workspace are split into three different parts:
+
+* the views before the focused view (*up*)
+* the focused view
+* the views after the focused view (*down*)
+
+Per convention, the first view is the *main* view. Some layouts (e.g.
+``TwoPane``) treat the main view specially, for example by always showing
+it.
+
+
+Full
+----
+
+Uses all available space to show the focused view.
+
+.. image:: https://trundle.github.io/awc/full.png
+
+
+TwoPane
+-------
+
+Splits the available space vertically by a configurable ratio. Shows the main
+view (first view in stack) on the left and the focused view on the right. If
+the main view is also the focused view, the next view down the stack is shown
+on the right.
+
+.. image:: https://trundle.github.io/awc/two_pane.png
+
+
+Rotated
+-------
+
+Rotates another layout by 90 degrees. For example, a rotated ``TwoPane``
+splits the available space vertically instead of horizontally.
+
+.. image:: https://trundle.github.io/awc/rotated_two_pane.png
+
+
+Reflected
+---------
+
+Reflects another layout either horizontally or vertically. For example, a
+horizontally reflected ``TwoPane`` shows the main view on the right and the
+focused view on the left.
+
+.. image:: https://trundle.github.io/awc/reflected_two_pane.png
+
+.. image:: https://trundle.github.io/awc/reflected_rotated_two_pane.png
 
 
 How can I set a background, have a status bar or lock the screen?

@@ -30,6 +30,13 @@ let package = Package(
                 "Wlroots",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]),
+        .target(
+            name: "LayoutVisualizer",
+            dependencies: [
+                "Cairo",
+                "Libawc",
+            ]
+        ),
         .testTarget(
             name: "awcTests",
             dependencies: ["awc"],
