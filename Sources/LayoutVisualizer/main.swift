@@ -72,6 +72,13 @@ private func render<L: Layout>(layout: L, cairo: OpaquePointer) where L.View == 
     }
 }
 
+private func drawBorder(cairo: OpaquePointer) {
+    cairo_set_source_rgb(cairo, 0, 0, 0)
+    cairo_rectangle(cairo, 0, 0, Double(width), Double(height))
+    cairo_set_line_width(cairo, 1)
+    cairo_stroke(cairo)
+}
+
 private func render<L: Layout>(layout: L, to filename: String) where L.View == View, L.OutputData == () {
     guard let surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height),
         let cairo = cairo_create(surface) else {
@@ -83,6 +90,7 @@ private func render<L: Layout>(layout: L, to filename: String) where L.View == V
         cairo_destroy(cairo)
     }
     render(layout: layout, cairo: cairo)
+    drawBorder(cairo: cairo)
     cairo_surface_write_to_png(surface, filename)
 }
 
