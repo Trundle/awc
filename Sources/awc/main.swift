@@ -387,7 +387,12 @@ extension Awc {
             // opportunity to do libinput configuration on the device to set
             // acceleration, etc.
             wlr_cursor_attach_input_device(self.cursor, device)
-            wlr_cursor_map_input_to_output(self.cursor, device, self.viewSet.current.data.output)
+
+            if let deviceOutputName = device.pointee.output_name,
+                let wantedOutput = self.viewSet.findOutputBy(name: String(cString: deviceOutputName)) 
+            {
+                wlr_cursor_map_input_to_output(self.cursor, device, wantedOutput.data.output)
+            }
         }
 
         // We need to let the wlr_seat know what our capabilities are, which is
