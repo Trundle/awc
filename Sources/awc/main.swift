@@ -781,7 +781,7 @@ func main() {
     // The Wayland display is managed by libwayland. It handles accepting clients from the Unix
     // socket, managing Wayland globals, and so on.
     guard let wlDisplay = wl_display_create() else {
-        print("[ERROR] Could not create Wayland display :( :(")
+        print("[FATAL] Could not create Wayland display :( :(")
         return
     }
 
@@ -789,16 +789,34 @@ func main() {
     // output hardware. The autocreate option will choose the most suitable
     // backend based on the current environment, such as opening an X11 window
     // if an X11 server is running.
-    let backend = wlr_backend_autocreate(wlDisplay)
+    guard let backend = wlr_backend_autocreate(wlDisplay) else {
+        print("[FATAL] Could not create backend :(")
+        return
+    }
+    defer {
+        wlr_backend_destroy(backend)
+    }
 
     // Create a no-op backend and output. Used when there is no other output.
-    let noopBackend = wlr_noop_backend_create(wlDisplay)
-    let noopOutput = wlr_noop_add_output(noopBackend)
+    guard let noopBackend = wlr_noop_backend_create(wlDisplay) else {
+        print("[FATAL] Could not create no-op backend :(")
+        return
+    }
+    defer {
+        wlr_backend_destroy(noopBackend)
+    }
+    guard let noopOutput = wlr_noop_add_output(noopBackend) else {
+        print("[FATAL] Could not create no-op output :(")
+        return
+    }
 
     // If we don't provide a renderer, autocreate makes a GLES2 renderer for us.
     // The renderer is responsible for defining the various pixel formats it
     // supports for shared memory, this configures that for clients.
-    let renderer = wlr_backend_get_renderer(backend)
+    guard let renderer = wlr_backend_get_renderer(backend) else {
+        print("[FATAL] Could not create renderer :(")
+        return
+    }
     wlr_renderer_init_wl_display(renderer, wlDisplay)
 
     // This creates some hands-off wlroots interfaces. The compositor is
@@ -807,7 +825,10 @@ func main() {
     // to dig your fingers in and play with their behavior if you want. Note that
     // the clients cannot set the selection directly without compositor approval,
     // see the handling of the request_set_selection event below.
-    let compositor = wlr_compositor_create(wlDisplay, renderer)
+    guard let compositor = wlr_compositor_create(wlDisplay, renderer) else {
+        print("[FATAL] Could not create compositor :(")
+        return
+    }
     wlr_data_device_manager_create(wlDisplay)
 
     // Creates an output layout, which a wlroots utility for working with an arrangement
@@ -815,16 +836,22 @@ func main() {
     let outputLayout = wlr_output_layout_create()
 
     let wlEventHandler = WlEventHandler()
-    wlEventHandler.addBackendListeners(backend: backend!)
+    wlEventHandler.addBackendListeners(backend: backend)
 
     // Configures a seat, which is a single "seat" at which a user sits and
     // operates the computer. This conceptually includes up to one keyboard,
     // pointer, touch, and drawing tablet device. We also rig up a listener to
     // let us know when new input devices are available on the backend.
-    let seat = wlr_seat_create(wlDisplay, "seat0")
+    guard let seat = wlr_seat_create(wlDisplay, "seat0") else {
+        print("[FATAL] Could not create seat :(")
+        return
+    }
 
     // Creates a cursor, which is a wlroots utility for tracking the cursor image shown on screen.
-    let cursor = wlr_cursor_create()
+    guard let cursor = wlr_cursor_create() else {
+        print("[FATAL] Could not create cursor :(")
+        return
+    }
     wlr_cursor_attach_output_layout(cursor, outputLayout)
 
     // Creates an xcursor manager, another wlroots utility which loads up
@@ -842,19 +869,16 @@ func main() {
     // https://drewdevault.com/2018/07/17/Input-handling-in-wlroots.html
     //
     // And more comments are sprinkled throughout the notify functions above.
-    wlEventHandler.addCursorListeners(cursor: cursor!)
+    wlEventHandler.addCursorListeners(cursor: cursor)
 
     /* Add a Unix socket to the Wayland display. */
     guard let socket = wl_display_add_socket_auto(wlDisplay) else {
-        wlr_backend_destroy(backend)
-        wlr_backend_destroy(noopBackend)
         return
     }
 
     // Start the backend. This will enumerate outputs and inputs, become the DRM master, etc
     guard wlr_backend_start(backend) else {
-        wlr_backend_destroy(backend)
-        wlr_backend_destroy(noopBackend)
+        print("[FATAL] Could not start backend :(")
         wl_display_destroy(wlDisplay)
         return
     }
@@ -873,7 +897,7 @@ func main() {
     }
 
     guard let idle = wlr_idle_create(wlDisplay) else {
-        print("[FATAL] Could not create idle")
+        print("[FATAL] Could not create idle :(")
         return
     }
 
@@ -883,13 +907,13 @@ func main() {
     let awc = Awc(
         wlEventHandler: wlEventHandler,
         wlDisplay: wlDisplay,
-        backend: backend!,
-        noOpOutput: noopOutput!,
+        backend: backend,
+        noOpOutput: noopOutput,
         outputLayout: outputLayout!,
-        renderer: renderer!,
-        cursor: cursor!,
+        renderer: renderer,
+        cursor: cursor,
         cursorManager: cursorManager!,
-        seat: seat!,
+        seat: seat,
         idle: idle,
         layout: layoutWrapper(config.layout),
         layoutWrapper: layoutWrapper,
@@ -903,12 +927,12 @@ func main() {
         config: config
     )
 
-    awc.addListener(seat!, SeatListener.newFor(emitter: seat!, handler: awc))
+    awc.addListener(seat, SeatListener.newFor(emitter: seat, handler: awc))
 
     // Set up Shells
     setUpXdgShell(display: wlDisplay, awc: awc)
     setupLayerShell(display: wlDisplay, awc: awc)
-    setupXWayland(display: wlDisplay, compositor: compositor!, awc: awc)
+    setupXWayland(display: wlDisplay, compositor: compositor, awc: awc)
 
     wlr_screencopy_manager_v1_create(wlDisplay)
 
