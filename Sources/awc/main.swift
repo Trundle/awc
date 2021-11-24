@@ -805,6 +805,11 @@ func main() {
 
     let args = AwcArguments.parseOrExit()
 
+    guard let config = loadConfig(path: args.configPath) else {
+        print("[FATAL] Could not load configuration")
+        return
+    }
+
     // The Wayland display is managed by libwayland. It handles accepting clients from the Unix
     // socket, managing Wayland globals, and so on.
     guard let wlDisplay = wl_display_create() else {
@@ -917,11 +922,6 @@ func main() {
     wlr_xdg_output_manager_v1_create(wlDisplay, outputLayout)
 
     wlr_gamma_control_manager_v1_create(wlDisplay)
-
-    guard let config = loadConfig(path: args.configPath) else {
-        print("[FATAL] Could not load configuration")
-        return
-    }
 
     guard let idle = wlr_idle_create(wlDisplay) else {
         print("[FATAL] Could not create idle :(")
