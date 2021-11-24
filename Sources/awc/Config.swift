@@ -57,6 +57,7 @@ public enum Action {
 public enum ButtonAction {
     case move
     case resize
+    case resizeByFrame
 }
 
 enum Key: Hashable {
@@ -67,6 +68,11 @@ enum Key: Hashable {
 enum KeyboardType {
     case builtin
     case external
+}
+
+enum WindowSelection {
+    case focused
+    case underCursor
 }
 
 public struct ButtonActionKey: Hashable {
@@ -91,7 +97,7 @@ class Config {
     let layout: AnyLayout<Surface, OutputDetails>
     let workspaces: [String]
     private let displayErrorCmd: String
-    private let buttonBindings: [ButtonActionKey: ButtonAction]
+    private let buttonBindings: [ButtonActionKey: (ButtonAction, WindowSelection)]
     private let keyBindings: [KeyActionKey: Action]
     private let keyboardConfigs: [(KeyboardType, String)]
 
@@ -103,7 +109,7 @@ class Config {
         displayErrorCmd: String,
         font: String,
         modifier: KeyModifiers,
-        buttonBindings: [ButtonActionKey: ButtonAction],
+        buttonBindings: [ButtonActionKey: (ButtonAction, WindowSelection)],
         keyBindings: [KeyActionKey: Action],
         keyboardConfigs: [(KeyboardType, String)],
         outputConfigs: [String: (Int32, Int32, Float)],
@@ -143,7 +149,7 @@ class Config {
         return "\(displayErrorCmd) \"\(msg)\""
     }
 
-    func findButtonBinding(modifiers: KeyModifiers, button: UInt32) -> ButtonAction? {
+    func findButtonBinding(modifiers: KeyModifiers, button: UInt32) -> (ButtonAction, WindowSelection)? {
         return self.buttonBindings[ButtonActionKey(modifiers: modifiers, button: button)]
     }
 
@@ -169,7 +175,7 @@ func loadConfig(path: String?) -> Config? {
         awc_config_free(&config)
     }
 
-    var buttonBindings: [ButtonActionKey: ButtonAction] = [:]
+    var buttonBindings: [ButtonActionKey: (ButtonAction, WindowSelection)] = [:]
     for i in 0..<config.number_of_button_bindings {
         let actionKey = ButtonActionKey(
             modifiers: toKeyModifiers(
@@ -177,7 +183,7 @@ func loadConfig(path: String?) -> Config? {
               config.button_bindings[i].number_of_mods),
             button: toButton(config.button_bindings[i].button)
         )
-        buttonBindings[actionKey] = toButtonAction(config.button_bindings[i].action)
+        buttonBindings[actionKey] = toButtonAction(config.button_bindings[i].action, config.button_bindings[i].window)
     }
 
     var keyBindings: [KeyActionKey: Action] = [:]
@@ -364,11 +370,15 @@ private func toAction(_ action: AwcAction) -> Action {
     }
 }
 
-private func toButtonAction(_ action: AwcButtonAction) -> ButtonAction {
+private func toButtonAction(_ action: AwcButtonAction, _ window: AwcWindowSelection) -> (ButtonAction, WindowSelection)
+{
+    let selection: WindowSelection = window == Focused ? .focused : .underCursor
     if action == Move {
-        return .move
+        return (.move, selection)
     } else if action == Resize {
-        return .resize
+        return (.resize, selection)
+    } else if action == ResizeByFrame {
+        return (.resizeByFrame, selection)
     } else {
         fatalError("Unknown button action: \(action)")
     }

@@ -95,6 +95,7 @@ struct ButtonBinding {
     mods: Vec<AwcModifier>,
     button: AwcButton,
     action: AwcButtonAction,
+    window: AwcWindowSelection,
 }
 
 impl ButtonBinding {
@@ -105,6 +106,7 @@ impl ButtonBinding {
             number_of_mods,
             button: self.button,
             action: self.action,
+            window: self.window,
         }
     }
 }
@@ -316,6 +318,7 @@ pub enum AwcButton {
 pub enum AwcButtonAction {
     Move,
     Resize,
+    ResizeByFrame,
 }
 
 #[repr(C)]
@@ -324,6 +327,7 @@ pub struct AwcButtonBinding {
     number_of_mods: size_t,
     button: AwcButton,
     action: AwcButtonAction,
+    window: AwcWindowSelection,
 }
 
 #[repr(C)]
@@ -383,6 +387,13 @@ pub enum AwcLayoutOp {
     Reflected(AwcDirection),
     Rotated,
     Push    
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[repr(C)]
+pub enum AwcWindowSelection {
+    Focused,
+    UnderCursor,
 }
 
 #[repr(C)]

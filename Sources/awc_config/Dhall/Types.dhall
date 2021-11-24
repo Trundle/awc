@@ -29,7 +29,9 @@ let Action =
 
 let Button = < Left | Right >
 
-let ButtonAction = < Move | Resize >
+let ButtonAction = < Move | Resize | ResizeByFrame >
+
+let WindowSelection = < Focused | UnderCursor >
 
 let KeyboardType = < Builtin | External >
 
@@ -44,7 +46,11 @@ let Direction = < Horizontal | Vertical >
 let KeyBinding = { mods : List Modifier, key : Key, action : Action }
 
 let ButtonBinding =
-      { mods : List Modifier, button : Button, action : ButtonAction }
+      { mods : List Modifier
+      , button : Button
+      , action : ButtonAction
+      , window : WindowSelection
+      }
 
 let OutputHud =
       { activeBackgroundColor : Color
@@ -238,6 +244,7 @@ in  { Action
     , KeyboardType
     , Layout
     , Modifier
+    , WindowSelection
     , buildLayout
     , choose
     , full

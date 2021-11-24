@@ -140,6 +140,7 @@ extension Awc {
         switch action {
         case .move: self.setToFloatingAndMove(surface)
         case .resize: self.setToFloatingAndResize(surface)
+        case .resizeByFrame: self.setToFloatingAndResizeByFrame(surface)
         }
     }
 
@@ -193,6 +194,48 @@ extension Awc {
                 return $0.float(view: surface, box: box)
             } else {
                 return $0
+            }
+        }
+    }
+
+    private func setToFloatingAndResizeByFrame(_ surface: Surface) {
+        if let output = self.viewSet.findOutput(view: surface) {
+            let startX = self.cursor.pointee.x
+            let startY = self.cursor.pointee.y
+
+            var currentX = startX
+            var currentY = startY
+
+            let toBox: (Int32) -> wlr_box = { margin in
+                let x = Int32(min(currentX, startX)) - margin
+                let y = Int32(min(currentY, startY)) - margin
+                return wlr_box(
+                    x: x, y: y, 
+                    width: Int32(max(currentX, startX)) - x + 2 * margin, 
+                    height: Int32(max(currentY, startY)) - y + 2 * margin)
+            }
+
+            self.dragging = { (_, x, y) in
+                currentX = x
+                currentY = y
+
+                var box = toBox(Int32(self.config.borderWidth))
+                wlr_output_damage_add_box(output.data.damage, &box)
+            }
+            self.draggingEnd = { (_, _) in
+                self.modifyAndUpdate {
+                    $0.float(view: surface, box: toBox(0))
+                }
+                self.additionalRenderHook = nil
+            } 
+            self.additionalRenderHook = { (renderer, output) in
+                let box = toBox(0)
+                drawBorder(
+                    renderer: renderer, 
+                    output: output.data.output, 
+                    box: box, 
+                    width: Int32(self.config.borderWidth),
+                    color: self.config.activeBorderColor)
             }
         }
     }

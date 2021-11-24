@@ -106,8 +106,12 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     var extensionData: [ObjectIdentifier: Any] = [:]
     /// Set to the drag handler if a dragging operation is taking place
     var dragging: ((UInt32, Double, Double) -> ())? = nil
+    /// Called once a dragging operation ended
+    var draggingEnd: ((Double, Double) -> ())? = nil
     // Additional overlay surfaces, for example Drag and Drop icons
     internal var surfaces: [UnsafeMutablePointer<wlr_surface>: (Double, Double)] = [:]
+    // Hook to render something on top of surfaces and layers, such as the output HUD or a resizing frame
+    internal var additionalRenderHook: ((UnsafeMutablePointer<wlr_renderer>, Output<L>) -> ())? = nil
     // An exclusive client that receives all input, if there is one (see wlroot's input inhibit protocol)
     internal var exclusiveClient: OpaquePointer? = nil
     // Whether the "output HUD" is visible
@@ -271,7 +275,22 @@ extension Awc {
 
         if event.pointee.state == WLR_BUTTON_RELEASED && self.dragging != nil {
             self.dragging = nil
+            self.draggingEnd?(self.cursor.pointee.x, self.cursor.pointee.y)
+            self.draggingEnd = nil
         } else if self.exclusiveClient == nil {
+            let maybeAction: (ButtonAction, WindowSelection)?
+            if let keyboard = self.seat.pointee.keyboard_state.keyboard {
+                let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(keyboard))
+                maybeAction = self.config.findButtonBinding(modifiers: modifiers, button: event.pointee.button)
+                if let (action, windowSelection) = maybeAction, windowSelection == .focused {
+                    self.withFocused {
+                        execute(action: action, surface: $0)
+                    }
+                    return
+                }
+            } else {
+                maybeAction = nil
+            }
             if let (parent, surface, _, _) = self.viewAtHook(self, self.cursor.pointee.x, self.cursor.pointee.y) {
                 // Focus the surface under cursor if it's different from the current focus
                 switch parent {
@@ -290,11 +309,9 @@ extension Awc {
                     }
                 }
 
-                if let keyboard = self.seat.pointee.keyboard_state.keyboard {
-                    let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(keyboard))
-                    if let action = self.config.findButtonBinding(modifiers: modifiers, button: event.pointee.button) {
-                        execute(action: action, surface: parent)
-                    }
+                if let (action, _) = maybeAction {
+                    execute(action: action, surface: parent)
+                    return
                 }
             }
         }
@@ -589,9 +606,11 @@ extension Awc {
         let modPressed = modifiers.contains(self.config.modifier)
         if !modPressed && self.outputHudVisible {
             wlr_output_damage_add_whole(self.viewSet.current.data.damage)
+            self.additionalRenderHook = nil
             self.outputHudVisible = false
         } else if modPressed && !self.outputHudVisible && self.exclusiveClient == nil {
             self.outputHudVisible = true
+            self.additionalRenderHook = self.renderOutputHud
             self.updateLayout()
         }
 
@@ -740,9 +759,7 @@ extension Awc: OutputDamage {
             }
         }
 
-        if self.outputHudVisible && output.workspace.tag == self.viewSet.current.workspace.tag {
-            self.viewSet.current.data.hud?.render(on: output, with: self.renderer)
-        }
+        self.additionalRenderHook?(self.renderer, output)
     }
 
     /// Conclude rendering and swap the buffers, showing the final frame on-screen.
@@ -768,6 +785,16 @@ extension Awc: OutputDamage {
         wlr_output_set_damage(wlrOutput, &frameDamage)
 
         wlr_output_commit(wlrOutput)
+    }
+}
+
+// MARK: Output HUD
+
+extension Awc {
+    func renderOutputHud(renderer: UnsafeMutablePointer<wlr_renderer>, output: Output<L>) {
+        if self.outputHudVisible && output.workspace.tag == self.viewSet.current.workspace.tag {
+            self.viewSet.current.data.hud?.render(on: output, with: self.renderer)
+        }
     }
 }
 
