@@ -486,7 +486,9 @@ pub unsafe extern "C" fn awc_config_load(
     let types = include_str!("../Dhall/Types.dhall");
     env::set_var("AWC_TYPES", &types);
 
-    match load_config(&path_str, result) {
+    let result = load_config(&path_str, result);
+    env::remove_var("AWC_TYPES");
+    match result {
         Err(desc) => CString::new(desc)
             .map(|p| p.into_raw() as *const c_char)
             // Error messages shouldn't contain any 0 bytes
