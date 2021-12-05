@@ -122,10 +122,10 @@ extension Awc {
         }
         if self.outputHudVisible {
             self.viewSet.current.data.hud?.update(
-                output: self.viewSet.current, 
-                renderer: self.renderer, 
-                font: self.config.font, 
-                config: self.config.outputHudConfig
+                output: self.viewSet.current,
+                renderer: self.renderer,
+                font: self.config.font,
+                colors: self.config.colors.output_hud
             )
         }
     }

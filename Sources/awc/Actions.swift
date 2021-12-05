@@ -1,3 +1,4 @@
+import Cairo
 import Glibc
 import Libawc
 import Wlroots
@@ -210,16 +211,28 @@ extension Awc {
                 let x = Int32(min(currentX, startX)) - margin
                 let y = Int32(min(currentY, startY)) - margin
                 return wlr_box(
-                    x: x, y: y, 
-                    width: Int32(max(currentX, startX)) - x + 2 * margin, 
+                    x: x, y: y,
+                    width: Int32(max(currentX, startX)) - x + 2 * margin,
                     height: Int32(max(currentY, startY)) - y + 2 * margin)
             }
+
+            let neonRenderer = NeonRenderer()
+            let box = output.data.box
+            neonRenderer.updateSize(
+                width: box.width, height: box.height, scale: output.data.output.pointee.scale,
+                renderer: self.renderer)
+            let cairoSurface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, box.width, box.height)!
+            let cairo = cairo_create(cairoSurface)!
 
             self.dragging = { (_, x, y) in
                 currentX = x
                 currentY = y
 
-                var box = toBox(Int32(self.config.borderWidth))
+                drawResizeFrame(cairo: cairo, frame: toBox(0), color: self.config.colors.resize_frame.toFloatRgba())
+                neonRenderer.update(surface: cairoSurface, with: self.renderer)
+
+                // The blur of the neon effect makes the damage box a bit larger
+                var box = toBox(Int32(self.config.borderWidth + 10))
                 wlr_output_damage_add_box(output.data.damage, &box)
             }
             self.draggingEnd = { (_, _) in
@@ -227,15 +240,9 @@ extension Awc {
                     $0.float(view: surface, box: toBox(0))
                 }
                 self.additionalRenderHook = nil
-            } 
+            }
             self.additionalRenderHook = { (renderer, output) in
-                let box = toBox(0)
-                drawBorder(
-                    renderer: renderer, 
-                    output: output.data.output, 
-                    box: box, 
-                    width: Int32(self.config.borderWidth),
-                    color: self.config.activeBorderColor)
+                neonRenderer.render(on: output, with: renderer)
             }
         }
     }
@@ -244,4 +251,39 @@ extension Awc {
 private func setWithinBounds(_ box: inout wlr_box, x: Int32, y: Int32, bounds: wlr_box) {
     box.x = min(max(x, bounds.x), bounds.x + bounds.width - box.width)
     box.y = min(max(y, bounds.y), bounds.y + bounds.height - box.height)
+}
+
+private func drawResizeFrame(cairo: OpaquePointer, frame: wlr_box, color: float_rgba) {
+    // Clear surface
+    cairo_save(cairo)
+    cairo_set_source_rgba(cairo, 0, 0, 0, 0)
+    cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE)
+    cairo_paint(cairo)
+    cairo_restore(cairo)
+
+    // Fill background
+    cairo_set_source_rgba(cairo, Double(color.r), Double(color.g), Double(color.b), Double(color.a))
+    cairo_rectangle(cairo, Double(frame.x), Double(frame.y), Double(frame.width), Double(frame.height))
+    cairo_fill(cairo)
+
+    cairo_set_line_width(cairo, 2.0)
+
+    // Draw grid
+    cairo_set_source_rgb(cairo, 1, 1, 1)
+    let gridSize: Int32 = 150
+    for y in stride(from: frame.y + gridSize, to: frame.y + frame.height, by: Int(gridSize)) {
+        cairo_move_to(cairo, Double(frame.x), Double(y))
+        cairo_line_to(cairo, Double(frame.x + frame.width), Double(y))
+        cairo_stroke(cairo)
+    }
+    for x in stride(from: frame.x + gridSize, to: frame.x + frame.width, by: Int(gridSize)) {
+        cairo_move_to(cairo, Double(x), Double(frame.y))
+        cairo_line_to(cairo, Double(x), Double(frame.y + frame.height))
+        cairo_stroke(cairo)
+    }
+
+    // Outer glow
+    cairo_set_source_rgba(cairo, 1, 1, 1, 1)
+    cairo_rectangle(cairo, Double(frame.x), Double(frame.y), Double(frame.width), Double(frame.height))
+    cairo_stroke(cairo)
 }

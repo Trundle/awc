@@ -1,0 +1,4 @@
+module Gles2ext [system] {
+  header "shim.h"
+  export *
+}

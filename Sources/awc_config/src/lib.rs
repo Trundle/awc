@@ -182,8 +182,6 @@ impl OutputConfig {
 #[serde(rename_all = "camelCase")]
 struct Config {
     border_width: u32,
-    active_border_color: AwcColor,
-    inactive_border_color: AwcColor,
     font: String,
     modifier: AwcModifier,
     display_error_cmd: String,
@@ -192,7 +190,7 @@ struct Config {
     keyboards: Vec<KeyboardConfig>,
     layout: Vec<AwcLayoutOp>,
     outputs: Vec<OutputConfig>,
-    output_hud: AwcOutputHudConfig,
+    colors: AwcColorsConfig,
     workspaces: Vec<String>,
 }
 
@@ -251,9 +249,7 @@ impl Config {
         (*target).font = str_to_c_char(&self.font, "font")?;
         (*target).modifier = self.modifier;
         (*target).border_width = self.border_width;
-        (*target).active_border_color = self.active_border_color;
-        (*target).inactive_border_color = self.inactive_border_color;
-        (*target).output_hud = self.output_hud;
+        (*target).colors = self.colors;
 
         Ok(())
     }
@@ -363,11 +359,29 @@ pub struct AwcOutputConfig {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[repr(C)]
-pub struct AwcOutputHudConfig {
-    active_background_color: AwcColor,
-    active_foreground_color: AwcColor,
-    inactive_background_color: AwcColor,
-    inactive_foreground_color: AwcColor,
+pub struct AwcColorsConfig {
+    borders: AwcBorderColors,
+    output_hud: AwcOutputHudColors,
+    resize_frame: AwcColor,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(C)]
+pub struct AwcBorderColors {
+    active: AwcColor,
+    inactive: AwcColor,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(C)]
+pub struct AwcOutputHudColors {
+    active_background: AwcColor,
+    active_foreground: AwcColor,
+    active_glow: AwcColor,
+    inactive_background: AwcColor,
+    inactive_foreground: AwcColor,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -398,13 +412,11 @@ pub enum AwcWindowSelection {
 
 #[repr(C)]
 pub struct AwcConfig {
-    active_border_color: AwcColor,
-    inactive_border_color: AwcColor,
     border_width: u32,
     display_error_cmd: *const c_char,
     font: *const c_char,
     modifier: AwcModifier,
-    output_hud: AwcOutputHudConfig,
+    colors: AwcColorsConfig,
 
     button_bindings: *const AwcButtonBinding,
     number_of_button_bindings: size_t,

@@ -53,10 +53,11 @@ let ButtonBinding =
       }
 
 let OutputHud =
-      { activeBackgroundColor : Color
-      , activeForegroundColor : Color
-      , inactiveBackgroundColor : Color
-      , inactiveForegroundColor : Color
+      { activeBackground : Color
+      , activeForeground : Color
+      , activeGlow : Color
+      , inactiveBackground : Color
+      , inactiveForeground : Color
       }
 
 let Layout
@@ -195,8 +196,6 @@ let buildLayout
 let Config =
       { Type =
           { borderWidth : Natural
-          , activeBorderColor : Color
-          , inactiveBorderColor : Color
           , keyboards : List { type : KeyboardType, layout : Text }
           , layout : List LayoutOp
           , outputs :
@@ -206,13 +205,15 @@ let Config =
           , displayErrorCmd : Text
           , font : Text
           , modifier : Modifier
-          , outputHud : OutputHud
+          , colors :
+              { borders : { active : Color, inactive : Color }
+              , outputHud : OutputHud
+              , resizeFrame : Color
+              }
           , workspaces : List Text
           }
       , default =
         { borderWidth = 2
-        , activeBorderColor = { r = 0xe3, g = 0xc5, b = 0x98, a = 0xff }
-        , inactiveBorderColor = { r = 0x8a, g = 0x6e, b = 0x64, a = 0xff }
         , keyboards = [] : List { type : KeyboardType, layout : Text }
         , layout = [ LayoutOp.Full ]
         , outputs =
@@ -222,11 +223,19 @@ let Config =
         , displayErrorCmd = "swaynag -m "
         , font = "PragmataPro Mono Liga"
         , modifier = Modifier.Logo
-        , outputHud =
-          { activeBackgroundColor = { r = 0x2a, g = 0x9d, b = 0x8f, a = 0xb2 }
-          , activeForegroundColor = { r = 0xff, g = 0xff, b = 0xff, a = 0xff }
-          , inactiveBackgroundColor = { r = 0xe9, g = 0xc4, b = 0x6a, a = 0xb2 }
-          , inactiveForegroundColor = { r = 0x26, g = 0x46, b = 0x53, a = 0xff }
+        , colors =
+          { borders =
+            { active = { r = 0xe3, g = 0xc5, b = 0x98, a = 0xff }
+            , inactive = { r = 0x18, g = 0xca, b = 0xe6, a = 0xff }
+            }
+          , outputHud =
+            { activeBackground = { r = 0x60, g = 0xa8, b = 0x6f, a = 0xb2 }
+            , activeForeground = { r = 0xff, g = 0xff, b = 0xff, a = 0xff }
+            , activeGlow = { r = 0x92, g = 0xff, b = 0xf1, a = 0xb2 }
+            , inactiveBackground = { r = 0x9e, g = 0x22, b = 0x91, a = 0xb2 }
+            , inactiveForeground = { r = 0xff, g = 0xff, b = 0xff, a = 0xff }
+            }
+          , resizeFrame = { r = 0x18, g = 0xca, b = 0xe6, a = 0x80 }
           }
         , workspaces = [ "1", "2", "3", "4", "5", "6", "7", "8", "9" ]
         }

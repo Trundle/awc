@@ -4,7 +4,7 @@ import awc_config
 import Libawc
 import Wlroots
 
-private extension AwcColor {
+extension AwcColor {
     func toFloatRgba() -> float_rgba {
         float_rgba(r: Float(self.r) / 255.0, g: Float(self.g) / 255.0, b: Float(self.b) / 255.0, a: Float(self.a) / 255.0)
     }
@@ -88,12 +88,10 @@ private struct KeyActionKey: Hashable {
 class Config {
     let path: String?
     let borderWidth: UInt32
-    let activeBorderColor: float_rgba
-    let inactiveBorderColor: float_rgba
+    let colors: AwcColorsConfig
     let font: String
     let modifier: KeyModifiers
     let outputConfigs: [String: (Int32, Int32, Float)]
-    let outputHudConfig: AwcOutputHudConfig
     let layout: AnyLayout<Surface, OutputDetails>
     let workspaces: [String]
     private let displayErrorCmd: String
@@ -104,8 +102,7 @@ class Config {
     fileprivate init(
         path: String?,
         borderWidth: UInt32,
-        activeBorderColor: float_rgba,
-        inactiveBorderColor: float_rgba,
+        colors: AwcColorsConfig,
         displayErrorCmd: String,
         font: String,
         modifier: KeyModifiers,
@@ -113,14 +110,12 @@ class Config {
         keyBindings: [KeyActionKey: Action],
         keyboardConfigs: [(KeyboardType, String)],
         outputConfigs: [String: (Int32, Int32, Float)],
-        outputHudConfig: AwcOutputHudConfig,
         layout: AnyLayout<Surface, OutputDetails>,
         workspaces: [String]
     ) {
         self.path = path
         self.borderWidth = borderWidth
-        self.activeBorderColor = activeBorderColor
-        self.inactiveBorderColor = inactiveBorderColor
+        self.colors = colors
         self.displayErrorCmd = displayErrorCmd
         self.font = font
         self.modifier = modifier
@@ -128,7 +123,6 @@ class Config {
         self.keyBindings = keyBindings
         self.keyboardConfigs = keyboardConfigs
         self.outputConfigs = outputConfigs
-        self.outputHudConfig = outputHudConfig
         self.layout = layout
         self.workspaces = workspaces
     }
@@ -242,8 +236,7 @@ func loadConfig(path: String?) -> Config? {
     return Config(
         path: path,
         borderWidth: config.border_width,
-        activeBorderColor: config.active_border_color.toFloatRgba(),
-        inactiveBorderColor: config.inactive_border_color.toFloatRgba(),
+        colors: config.colors,
         displayErrorCmd: String(cString: config.display_error_cmd),
         font: String(cString: config.font),
         modifier: toKeyModifiers(config.modifier),
@@ -251,7 +244,6 @@ func loadConfig(path: String?) -> Config? {
         keyBindings: keyBindings,
         keyboardConfigs: keyboardConfigs,
         outputConfigs: outputConfigs,
-        outputHudConfig: config.output_hud,
         layout: layout,
         workspaces: workspaces
     )

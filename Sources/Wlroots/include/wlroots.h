@@ -7,6 +7,8 @@
 
 #include <wlr/backend.h>
 #include <wlr/backend/noop.h>
+#include <wlr/render/egl.h>
+#include <wlr/render/gles2.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>

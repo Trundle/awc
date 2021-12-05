@@ -1,0 +1,4 @@
+module Gles32 [system] {
+  header "shim.h"
+  export *
+}

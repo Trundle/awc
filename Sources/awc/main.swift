@@ -851,6 +851,11 @@ func main() {
     }
     wlr_renderer_init_wl_display(renderer, wlDisplay)
 
+    guard wlr_renderer_is_gles2(renderer) else {
+        print("[FATAL] Renderer is not a GLES2 renderer :( :(")
+        return
+    }
+
     // This creates some hands-off wlroots interfaces. The compositor is
     // necessary for clients to allocate surfaces and the data device manager
     // handles the clipboard. Each of these wlroots interfaces has room for you
@@ -946,8 +951,8 @@ func main() {
         layoutWrapper: layoutWrapper,
         renderSurfaceHook: smartBorders(
             borderWidth: config.borderWidth,
-            activeBorderColor: config.activeBorderColor,
-            inactiveBorderColor: config.inactiveBorderColor,
+            activeBorderColor: config.colors.borders.active.toFloatRgba(),
+            inactiveBorderColor: config.colors.borders.inactive.toFloatRgba(),
             renderSurface
         ),
         viewAtHook: { layerViewAt(delegate: defaultViewAtHook, awc: $0, x: $1, y: $2) },
