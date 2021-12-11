@@ -107,5 +107,5 @@ public final class TestLayout: Layout {
     public func shrink() -> TestLayout {
         self.shrinkCalled = true
         return self
-    } 
+    }
 }

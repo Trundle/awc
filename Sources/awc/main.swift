@@ -406,7 +406,7 @@ extension Awc {
             wlr_cursor_attach_input_device(self.cursor, device)
 
             if let deviceOutputName = device.pointee.output_name,
-                let wantedOutput = self.viewSet.findOutputBy(name: String(cString: deviceOutputName)) 
+                let wantedOutput = self.viewSet.findOutputBy(name: String(cString: deviceOutputName))
             {
                 wlr_cursor_map_input_to_output(self.cursor, device, wantedOutput.data.output)
             }

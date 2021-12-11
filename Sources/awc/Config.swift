@@ -226,8 +226,8 @@ func loadConfig(path: String?) -> Config? {
         workspaces.append(String(cString: config.workspaces[i]!))
     }
 
-    guard let layout: AnyLayout<Surface, OutputDetails> = try? 
-        buildLayout(config.layout, config.number_of_layout_ops) 
+    guard let layout: AnyLayout<Surface, OutputDetails> = try?
+        buildLayout(config.layout, config.number_of_layout_ops)
     else {
         print("[ERROR] Invalid layout! Please use buildLayout")
         return nil

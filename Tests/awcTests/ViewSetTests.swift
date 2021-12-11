@@ -27,15 +27,15 @@ extension Output: Equatable where L == TestLayout {
 
 extension ViewSet: Equatable where L == TestLayout {
     public static func ==(lhs: ViewSet<TestLayout, TestView>, rhs: ViewSet<TestLayout, TestView>) -> Bool {
-        lhs.current == rhs.current 
-            && lhs.visible.sorted(by: { $0.workspace.tag > $1.workspace.tag }) 
+        lhs.current == rhs.current
+            && lhs.visible.sorted(by: { $0.workspace.tag > $1.workspace.tag })
                 == rhs.visible.sorted(by: { $0.workspace.tag > $1.workspace.tag })
             && lhs.hidden.sorted(by: { $0.tag > $1.tag }) == rhs.hidden.sorted(by: { $0.tag > $1.tag })
             && equalFloating(lhs, rhs)
     }
 
     private static func equalFloating(
-        _ lhs: ViewSet<TestLayout, TestView>, 
+        _ lhs: ViewSet<TestLayout, TestView>,
         _ rhs: ViewSet<TestLayout, TestView>
     ) -> Bool {
         for workspace in lhs.workspaces() {
@@ -103,7 +103,7 @@ public final class ViewSetTests: XCTestCase {
     }
 
     func testMapWorkspaces() {
-        property("mapWorkspaces with identity returns workspace again") <- forAll { 
+        property("mapWorkspaces with identity returns workspace again") <- forAll {
             (viewSet: ViewSet<TestLayout, TestView>) in
             viewSet.mapWorkspaces { $0 } == viewSet
         }
@@ -116,12 +116,12 @@ public final class ViewSetTests: XCTestCase {
     }
 
     func testGreedyView() {
-        property("greedyView returns unmodified ViewSet for unknown tag") <- forAll { 
+        property("greedyView returns unmodified ViewSet for unknown tag") <- forAll {
             (viewSet: ViewSet<TestLayout, TestView>) in
             viewSet.greedyView(tag: "unknown") == viewSet
         }
 
-        property("greedyView returns unmodified ViewSet for current tag") <- forAll { 
+        property("greedyView returns unmodified ViewSet for current tag") <- forAll {
             (viewSet: ViewSet<TestLayout, TestView>) in
             viewSet.greedyView(tag: viewSet.current.workspace.tag) == viewSet
         }

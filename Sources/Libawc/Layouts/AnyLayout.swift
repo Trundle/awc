@@ -59,8 +59,8 @@ public class AnyLayout<View, OutputData>: Layout {
 }
 
 public extension AnyLayout {
-    static func wrap<L: Layout>(_ layout: L) -> AnyLayout<L.View, L.OutputData> 
-    where L.View == View, L.OutputData == OutputData 
+    static func wrap<L: Layout>(_ layout: L) -> AnyLayout<L.View, L.OutputData>
+    where L.View == View, L.OutputData == OutputData
     {
         AnyLayoutImpl(layout)
     }

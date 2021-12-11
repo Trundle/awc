@@ -55,9 +55,9 @@ class CtlClient {
         if let server = self.server {
             if self.writableEventSource == nil {
                 self.writableEventSource = wl_event_loop_add_fd(
-                    server.eventLoop, 
-                    self.fd, 
-                    UInt32(WL_EVENT_WRITABLE), 
+                    server.eventLoop,
+                    self.fd,
+                    UInt32(WL_EVENT_WRITABLE),
                     handleClientWriteable,
                     Unmanaged.passUnretained(self).toOpaque())
             }
@@ -90,7 +90,7 @@ extension CtlClient {
         }
     }
 
-    fileprivate func handleWriteable(mask: UInt32) {        
+    fileprivate func handleWriteable(mask: UInt32) {
         let events = EventMask(rawValue: mask)
         guard !events.contains(.error) && !events.contains(.hangup) else {
             self.server?.disconnect(client: self)
@@ -136,9 +136,9 @@ class CtlServer {
     var eventSource: OpaquePointer? = nil
 
     init(
-        eventLoop: OpaquePointer, 
+        eventLoop: OpaquePointer,
         path: String,
-        fd: Int32, 
+        fd: Int32,
         sockaddr: UnsafeMutablePointer<sockaddr_un>,
         requestHandler: @escaping (CtlClient, CtlRequest) throws -> ()
     ) {
@@ -177,7 +177,7 @@ class CtlServer {
         try setNonblocking(fd: clientFd)
         let client = CtlClient(server: self, fd: clientFd)
         let eventSource = wl_event_loop_add_fd(
-            self.eventLoop, clientFd, UInt32(WL_EVENT_READABLE), handleClientRead, 
+            self.eventLoop, clientFd, UInt32(WL_EVENT_READABLE), handleClientRead,
             Unmanaged.passUnretained(client).toOpaque())
         self.clients[client] = eventSource!
     }
@@ -301,7 +301,7 @@ func setUpCtlListeningSocket<L: Layout>(awc: Awc<L>) throws -> CtlServer {
     let server = CtlServer(
         eventLoop: eventLoop!, path: path, fd: sock, sockaddr: addr, requestHandler: createRequestHandler(awc: awc))
     let eventSource = wl_event_loop_add_fd(
-        eventLoop, sock, UInt32(WL_EVENT_READABLE), handleConnect, 
+        eventLoop, sock, UInt32(WL_EVENT_READABLE), handleConnect,
         Unmanaged.passUnretained(server).toOpaque())
     server.eventSource = eventSource
 

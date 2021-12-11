@@ -54,7 +54,7 @@ private class ChooseLayoutInnerMapper<Left: Layout>: AnyLayoutMapper {
     }
 }
 
-public func buildLayout<View, OutputData>(_ op: UnsafePointer<AwcLayoutOp>, _ numberOfOps: Int) throws 
+public func buildLayout<View, OutputData>(_ op: UnsafePointer<AwcLayoutOp>, _ numberOfOps: Int) throws
 -> AnyLayout<View, OutputData> {
     var opsLeft = numberOfOps
     var currentOp = op

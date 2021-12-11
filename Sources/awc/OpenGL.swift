@@ -4,7 +4,7 @@ class Program {
     private let id: GLuint
     private var locations: [String: GLint] = [:]
 #if OPENGL_DEBUG
-    private var active: Bool = false
+    private var isActive: Bool = false
 #endif
 
     fileprivate init(id: GLuint) {
@@ -29,7 +29,7 @@ class Program {
 
     public func set(name: String, int value: Int32) {
     #if OPENGL_DEBUG
-        guard self.active else { fatalError("set() called, but program not active") }
+        assert(self.isActive, "set() called, but program not active")
     #endif
         let location = self.getUniformLocation(name: name)
         gl { glUniform1i(location, GLint(value)) }
@@ -37,7 +37,7 @@ class Program {
 
     public func set(name: String, matrix: inout matrix9) {
     #if OPENGL_DEBUG
-        guard self.active else { fatalError("set() called, but program not active") }
+        assert(self.isActive, "set() called, but program not active")
     #endif
         let location = self.getUniformLocation(name: name)
         gl { glUniformMatrix3fv(location, 1, GLboolean(GL_FALSE), &matrix.0) }
@@ -46,12 +46,12 @@ class Program {
     public func use(_ block: () -> ()) {
         gl { glUseProgram(self.id) }
     #if OPENGL_DEBUG
-        self.active = true
+        self.isActive = true
     #endif
         defer {
             gl { glUseProgram(0) }
         #if OPENGL_DEBUG
-            self.active = false
+            self.isActive = false
         #endif
         }
         block()

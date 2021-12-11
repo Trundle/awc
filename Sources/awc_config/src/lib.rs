@@ -400,7 +400,7 @@ pub enum AwcLayoutOp {
     TwoPane { split: f64, delta: f64 },
     Reflected(AwcDirection),
     Rotated,
-    Push    
+    Push
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]

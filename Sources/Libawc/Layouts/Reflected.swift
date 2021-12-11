@@ -20,8 +20,8 @@ public final class Reflected<L: Layout>: Layout {
     public init(layout: L, direction: AwcDirection) {
         self.layout = layout
         self.direction = direction
-        self.reflect = 
-            direction == Horizontal 
+        self.reflect =
+            direction == Horizontal
             ? { $1.reflectHorizontally(mirror: $0) }
             : { $1.reflectVertically(mirror: $0) }
     }
@@ -68,9 +68,9 @@ private extension wlr_box {
 
     func reflectVertically(mirror: wlr_box) -> wlr_box {
         wlr_box(
-            x: self.x, 
-            y: 2 * mirror.y + mirror.height - self.y - self.height, 
-            width: self.width, 
+            x: self.x,
+            y: 2 * mirror.y + mirror.height - self.y - self.height,
+            width: self.width,
             height: self.height)
     }
 }

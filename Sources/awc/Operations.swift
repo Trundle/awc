@@ -31,7 +31,7 @@ extension Awc {
 
         // Activate the new surface
         switch focus {
-        case .layer(let surface):
+        case .layer(_):
             // XXX what to do here?
             ()
         case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface, true)

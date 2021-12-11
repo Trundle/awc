@@ -53,7 +53,7 @@ public class AnyLayoutTests: XCTestCase {
 
         let _ = layout.expand()
 
-        XCTAssertTrue(wrappedLayout.expandCalled)        
+        XCTAssertTrue(wrappedLayout.expandCalled)
     }
 
     func testForwardsShrink() {

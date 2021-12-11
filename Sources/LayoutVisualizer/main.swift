@@ -65,7 +65,7 @@ private func render<L: Layout>(layout: L, cairo: OpaquePointer) where L.View == 
         cairo_text_extents(cairo, String(view.number), &textExtents)
         cairo_set_source_rgb(cairo, 0, 0, 0)
         cairo_move_to(
-            cairo, 
+            cairo,
             Double(box.x) + Double(box.width) / 2 - textExtents.width / 2 - textExtents.x_bearing,
             Double(box.y) + Double(box.height) / 2 - textExtents.height / 2 - textExtents.y_bearing)
         cairo_show_text(cairo, String(view.number))

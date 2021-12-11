@@ -45,7 +45,7 @@ public class ReflectedTests: XCTestCase {
     }
 
     private func testLayoutWithSingleView(
-        layout: Reflected<TestLayout>, 
+        layout: Reflected<TestLayout>,
         expectedResult: [EqWrapper]
     ) {
         let view = TestView()
