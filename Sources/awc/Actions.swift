@@ -241,8 +241,10 @@ extension Awc {
                 }
                 self.additionalRenderHook = nil
             }
-            self.additionalRenderHook = { (renderer, output) in
-                neonRenderer.render(on: output, with: renderer)
+            self.additionalRenderHook = { (renderer, renderingOutput) in
+                if output.data.output == renderingOutput.data.output {
+                    neonRenderer.render(on: renderingOutput, with: renderer)
+                }
             }
         }
     }
