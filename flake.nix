@@ -36,7 +36,7 @@
 
           wayland
           wayland-protocols
-          wlroots
+          wlroots_0_14
           libdrm
           libxkbcommon
           libudev

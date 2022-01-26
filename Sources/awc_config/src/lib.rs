@@ -570,6 +570,6 @@ pub extern "C" fn awc_config_autostart_path() -> *const c_char {
 #[no_mangle]
 pub unsafe extern "C" fn awc_config_str_free(str: *const c_char) {
     if !str.is_null() {
-        CString::from_raw(str as *mut c_char);
+        drop(CString::from_raw(str as *mut c_char));
     }
 }
