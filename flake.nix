@@ -39,7 +39,7 @@
           wlroots_0_14
           libdrm
           libxkbcommon
-          libudev
+          udev
           libevdev
           pixman
           libGL
@@ -49,7 +49,8 @@
           dhall
           dhall-lsp-server
 
-          swift
+          #(swift.overrideAttrs (attrs: attrs // { doCheck = false; }))
+	  swift
         ];
       };
     };

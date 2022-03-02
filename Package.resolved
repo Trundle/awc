@@ -6,8 +6,8 @@
         "repositoryURL": "https://github.com/mxcl/Chalk.git",
         "state": {
           "branch": null,
-          "revision": "9aa9f348b86db3cf6702a3e43c081ecec80cf3c7",
-          "version": "0.4.0"
+          "revision": "a7f58e47a08ca5a84f73acc4bcf6c2c19d990609",
+          "version": "0.5.0"
         }
       },
       {
@@ -24,8 +24,8 @@
         "repositoryURL": "https://github.com/apple/swift-argument-parser",
         "state": {
           "branch": null,
-          "revision": "e1465042f195f374b94f915ba8ca49de24300a0d",
-          "version": "1.0.2"
+          "revision": "e394bf350e38cb100b6bc4172834770ede1b7232",
+          "version": "1.0.3"
         }
       },
       {
