@@ -277,7 +277,7 @@ extension Awc {
             self.dragging = nil
             self.draggingEnd?(self.cursor.pointee.x, self.cursor.pointee.y)
             self.draggingEnd = nil
-        } else if self.exclusiveClient == nil {
+        } else if self.exclusiveClient == nil && event.pointee.state == WLR_BUTTON_PRESSED {
             let maybeAction: (ButtonAction, WindowSelection)?
             if let keyboard = self.seat.pointee.keyboard_state.keyboard {
                 let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(keyboard))
