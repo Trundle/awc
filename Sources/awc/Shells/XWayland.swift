@@ -229,6 +229,19 @@ extension Awc: XWaylandMappedSurface {
             return
         }
 
+        if let waylandSurface = xwaylandSurface.pointee.surface {
+            let newWidth = waylandSurface.pointee.current.width
+            let newHeight = waylandSurface.pointee.current.height
+            if (newWidth != box.width || newHeight != box.height)
+                && self.viewSet.floating.contains(key: surface)
+            {
+                let newBox = wlr_box(x: box.x, y: box.y, width: newWidth, height: newHeight)
+                self.modifyAndUpdate {
+                    $0.replace(floating: $0.floating.updateValue(newBox, forKey: surface))
+                }
+            }
+        }
+
         var damage = pixman_region32_t()
         pixman_region32_init(&damage)
         defer {

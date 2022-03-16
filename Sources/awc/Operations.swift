@@ -37,6 +37,7 @@ extension Awc {
         case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface, true)
         case .xwayland(let surface):
             wlr_xwayland_surface_activate(surface, true)
+            wlr_xwayland_surface_restack(surface, nil, XCB_STACK_MODE_ABOVE)
             if let xwayland: UnsafeMutablePointer<wlr_xwayland> = self.getExtensionData() {
                 wlr_xwayland_set_seat(xwayland, self.seat)
             }
