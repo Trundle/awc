@@ -108,6 +108,11 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     var dragging: ((UInt32, Double, Double) -> ())? = nil
     /// Called once a dragging operation ended
     var draggingEnd: ((Double, Double) -> ())? = nil
+    /// To make Drag'n'Drop work smoothly under XWayland: this surface will receive all motion
+    /// events, even if the pointer leaves the surface. Not used for DnD on Wayland surfaces
+    var draggingStart: (UnsafeMutablePointer<wlr_surface>, (Double, Double))? = nil
+    /// How many pointer buttons are currently pressed
+    internal var buttonsPressed: Int = 0
     // Additional overlay surfaces, for example Drag and Drop icons
     internal var surfaces: [UnsafeMutablePointer<wlr_surface>: (Double, Double)] = [:]
     // Hook to render something on top of surfaces and layers, such as the output HUD or a resizing frame
@@ -273,6 +278,10 @@ extension Awc {
     private func handleCursorButton(_ event: UnsafeMutablePointer<wlr_event_pointer_button>) {
         wlr_idle_notify_activity(self.idle, self.seat)
 
+        self.buttonsPressed += event.pointee.state == WLR_BUTTON_PRESSED ? 1 : -1
+        assert(buttonsPressed >= 0)
+        self.draggingStart = nil
+
         if event.pointee.state == WLR_BUTTON_RELEASED && self.dragging != nil {
             self.dragging = nil
             self.draggingEnd?(self.cursor.pointee.x, self.cursor.pointee.y)
@@ -291,7 +300,11 @@ extension Awc {
             } else {
                 maybeAction = nil
             }
-            if let (parent, surface, _, _) = self.viewAtHook(self, self.cursor.pointee.x, self.cursor.pointee.y) {
+            if let (parent, surface, sx, sy) = self.viewAtHook(self, self.cursor.pointee.x, self.cursor.pointee.y) {
+                if buttonsPressed == 1 {
+                    self.draggingStart = (surface, (sx - self.cursor.pointee.x, sy - self.cursor.pointee.y))
+                }
+
                 // Focus the surface under cursor if it's different from the current focus
                 switch parent {
                 case .layer: ()
@@ -363,6 +376,13 @@ extension Awc {
 
         if let dragging = self.dragging {
             dragging(time, cx, cy)
+        } else if let (surface, (startX, startY)) = self.draggingStart {
+            // DnD for XWayland: the initial surface receives all motion events, even if the
+            // pointer leaves the surface
+            let sx = startX + cx
+            let sy = startY + cy
+            wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
+            wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
         } else if let (_, surface, sx, sy) = self.viewAtHook(self, cx, cy) {
             wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
             wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
