@@ -12,15 +12,16 @@ enum Request {
     SetLayout { layout_number: u8 },
 }
 
-fn get_arg_matches() -> clap::ArgMatches<'static> {
-    clap::App::new("awcctl")
+fn get_arg_matches() -> clap::ArgMatches {
+    clap::Command::new("awcctl")
         .arg(
-            clap::Arg::with_name("menu")
+            clap::Arg::new("menu")
                 .long("menu")
                 .default_value("whisker-menu"),
         )
-        .subcommand(clap::SubCommand::with_name("list-layouts"))
-        .subcommand(clap::SubCommand::with_name("select-layout"))
+        .subcommand(clap::Command::new("list-layouts"))
+        .subcommand(clap::Command::new("select-layout"))
+        .subcommand_required(true)
         .get_matches()
 }
 
@@ -111,11 +112,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut socket = UnixStream::connect(socket_path)?;
 
     match args.subcommand() {
-        ("list-layouts", _) => list_layouts(&mut socket)?,
-        ("select-layout", _) => select_layout(&mut socket, args.value_of("menu").unwrap())?,
-        _ => {
-            eprintln!("{}", args.usage());
-        }
+        Some(("list-layouts", _)) => list_layouts(&mut socket)?,
+        Some(("select-layout", _)) => select_layout(&mut socket, args.value_of("menu").unwrap())?,
+        _ => {}
     }
 
     Ok(())
