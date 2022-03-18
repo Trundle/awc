@@ -4,11 +4,16 @@ import Wlroots
 
 public enum CtlRequest: Decodable, Equatable {
     case listLayouts
+    case listWorkspaces
+    case newWorkspace(String)
+    case renameWorkspace(String, String)
     case setLayout(UInt8)
 
     private enum Keys: String, CodingKey {
         case cmd
         case layoutNumber = "layout_number"
+        case newTag = "new_tag"
+        case tag
     }
 
     public init(from decoder: Decoder) throws {
@@ -17,6 +22,14 @@ public enum CtlRequest: Decodable, Equatable {
 
         switch cmd {
         case "list_layouts": self = .listLayouts
+        case "list_workspaces": self = .listWorkspaces
+        case "new_workspace":
+            let tag = try container.decode(String.self, forKey: .tag)
+            self = .newWorkspace(tag)
+        case "rename_workspace":
+            let tag = try container.decode(String.self, forKey: .tag)
+            let newTag = try container.decode(String.self, forKey: .newTag)
+            self = .renameWorkspace(tag, newTag)
         case "set_layout":
             let layout = try container.decode(UInt8.self, forKey: .layoutNumber)
             self = .setLayout(layout)

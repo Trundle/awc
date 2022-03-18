@@ -37,8 +37,21 @@ class CtlClient {
         self.buffer = UnsafeMutablePointer<Int8>.allocate(capacity: CtlClient.BUFFER_SIZE)
     }
 
+    func closeConnection() {
+        close(self.fd)
+    }
+
     func write<T: Encodable>(response: T) throws {
         let data = try CtlClient.ENCODER.encode(response)
+        try write(data: data)
+    }
+
+    func write<T>(response: T) throws {
+        let data = try JSONSerialization.data(withJSONObject: response)
+        try write(data: data)
+    }
+
+    private func write(data: Data) throws {
         var size = UInt32(data.count)
         withUnsafeMutablePointer(to: &size) {
             $0.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<UInt32>.size) {
@@ -186,6 +199,7 @@ class CtlServer {
         if let eventSource = self.clients.removeValue(forKey: client) {
             wl_event_source_remove(eventSource)
         }
+        client.closeConnection()
     }
 }
 
@@ -239,6 +253,41 @@ func createRequestHandler<L: Layout>(awc: Awc<L>) -> (CtlClient, CtlRequest) thr
                 currentLayout = currentLayout!.nextLayout()
             }
             try client.write(response: layouts)
+        case .listWorkspaces:
+            let workspaces: [[String: Any]] = awc.viewSet.workspaces().map {
+                [
+                    "tag": $0.tag,
+                    "views": $0.stack?.toList().map { $0.title } ?? []
+                ]
+            }
+            try client.write(response: workspaces)
+        case .newWorkspace(let tag):
+            if awc.viewSet.workspaces().contains(where: { $0.tag == tag }) {
+                try client.write(response: "error")
+            } else {
+                awc.modifyAndUpdate {
+                    $0.replace(
+                        current: $0.current,
+                        visible: $0.visible,
+                        hidden: $0.hidden + [Workspace(tag: tag, layout: awc.defaultLayout)]
+                    )
+                }
+                try client.write(response: "ok")
+            }
+        case .renameWorkspace(let tag, let newTag):
+            if awc.viewSet.workspaces().contains(where: { $0.tag == newTag }) {
+                try client.write(response: "error")
+            } else {
+                awc.modifyAndUpdate {
+                    $0.mapWorkspaces {
+                        switch $0.tag {
+                        case tag: return $0.replace(tag: newTag)
+                        default: return $0
+                        }
+                    }
+                }
+                try client.write(response: "ok")
+            }
         case .setLayout(let layoutNumber):
             var currentLayout: L? = awc.defaultLayout
             for _ in 0..<layoutNumber {
