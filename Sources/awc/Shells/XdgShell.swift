@@ -281,7 +281,12 @@ extension Awc: XdgMappedSurface {
             if let output = self.viewSet.findOutput(view: parentSurface),
                let (_, _, parentBox) = output.arrangement.first(where: { $0.0 == parentSurface })
             {
-                var constraintBox = parentBox
+                let outputBox = output.data.box
+                var constraintBox = wlr_box(
+                    x: -parentBox.x, 
+                    y: -parentBox.y,
+                    width: outputBox.width,
+                    height: outputBox.height)
                 wlr_xdg_popup_unconstrain_from_box(popup, &constraintBox)
             }
         }
