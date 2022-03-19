@@ -1,54 +1,90 @@
-import Cairo
 import Glibc
+import Foundation
+
+import Cairo
 import Libawc
 import Wlroots
 
-/// Executes the given command. The command will run in its own session (i.e. it will not be
-/// a child process).
-func executeCommand(_ cmd: String) {
-    var child = fork()
-    if child == 0 {
-        // Child
-        child = fork()
-        if child == 0 {
-            // Grandchild
-            setsid()
-            execl("/bin/sh", "/bin/sh", "-c", cmd)
-            // Should never be reached
-            _exit(1)
-        } else {
-            // Terminate child
-            _exit(child == -1 ? 1 : 0)
-        }
-    } else if child != -1 {
-        // Wait for child to complete
-        var done = false
-        while !done {
-            var status = pid_t()
-            done = withUnsafeMutablePointer(to: &status) {
-                waitpid(child, $0, 0) >= 0 || errno != EINTR
-            }
-        }
+
+private let spawnHelperPath: String = {
+    let arg0 = ProcessInfo.processInfo.arguments[0]
+    if let i = arg0.lastIndex(of: "/") {
+        return arg0[...i] + "SpawnHelper"
+    } else {
+        // Too bad, let's se if we are lucky
+        return "SpawnHelper"
     }
+}()
+
+enum ExecuteError: Error {
+    case noMemory
+    case syscallError(Int32)
 }
 
-private func execl(_ path: String, _ args: String...) {
-    let cArgV = UnsafeMutableBufferPointer<UnsafeMutablePointer<Int8>?>.allocate(capacity: args.count + 1)
-    for (i, value) in args.enumerated() {
-        value.withCString { valuePtr in
-            cArgV[i] = strdup(valuePtr)
+/// Executes the given command. The command will run in its own session (i.e. it will not be
+/// a child process).
+func executeCommand(_ cmd: String) throws {
+    var attrs = posix_spawnattr_t()
+    var result = posix_spawnattr_init(&attrs)
+    guard result == 0 else {
+        throw ExecuteError.syscallError(result)
+    }
+    defer {
+        posix_spawnattr_destroy(&attrs)
+    }
+
+    let args = ["SpawnHelper", "/bin/sh", "-c", cmd].map { $0.withCString(strdup) } + [nil]
+    defer {
+        for value in args {
+            free(value)
         }
     }
-    cArgV[args.count] = nil
-    let _ = path.withCString {
-        execv($0, cArgV.baseAddress!)
+    if args.dropLast().contains(nil) {
+        throw ExecuteError.noMemory
+    }
+
+    let env: [UnsafeMutablePointer<CChar>?] = ProcessInfo.processInfo.environment.map {
+        "\($0.0)=\($0.1)".withCString(strdup)
+    } + [nil]
+    defer {
+        for value in env {
+            free(value)
+        }
+    }
+    if env.dropLast().contains(nil) {
+        throw ExecuteError.noMemory
+    }
+
+    var pid = pid_t()
+    let _ = try spawnHelperPath.withCString {
+        result = posix_spawn(&pid, $0, nil, &attrs, args, env)
+        guard result == 0 else {
+            throw ExecuteError.syscallError(result)
+        }
+    }
+
+    // Wait for child to complete
+    var done = false
+    var status = pid_t()
+    while !done {
+        done = withUnsafeMutablePointer(to: &status) {
+            waitpid(pid, $0, 0) >= 0 || errno != EINTR
+        }
+    }
+    if status != 0 {
+        throw ExecuteError.syscallError(status)
     }
 }
 
 extension Awc {
     internal func execute(action: Action) {
         switch action {
-        case .execute(let cmd): executeCommand(cmd)
+        case .execute(let cmd):
+            do {
+                try executeCommand(cmd)
+            } catch {
+                print("[WARN] Could not execute '\(cmd)': \(error)")
+            }
         case .expand: self.modifyAndUpdate { $0.replace(layout: $0.current.workspace.layout.expand()) }
         case .close: self.kill()
         case .configReload: self.reloadConfig()
@@ -129,7 +165,11 @@ extension Awc {
             }
             print("[INFO] Reloaded config!")
         } else {
-            executeCommand(self.config.generateErrorDisplayCmd(msg: "Reloading config failed :("))
+            do {
+                try executeCommand(self.config.generateErrorDisplayCmd(msg: "Reloading config failed :("))
+            } catch {
+                print("[WARN] Could not display error message: \(error)")
+            }
         }
     }
 }

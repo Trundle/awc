@@ -188,6 +188,7 @@ class CtlServer {
             throw CtlError.syscallError("accept(): \(errno)")
         }
         try setNonblocking(fd: clientFd)
+        try setCloexec(fd: clientFd)
         let client = CtlClient(server: self, fd: clientFd)
         let eventSource = wl_event_loop_add_fd(
             self.eventLoop, clientFd, UInt32(WL_EVENT_READABLE), handleClientRead,

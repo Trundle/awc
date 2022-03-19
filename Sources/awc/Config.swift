@@ -394,6 +394,10 @@ func runAutostart() {
 
     let autostartPath = String(cString: autostartCPath!)
     if FileManager.default.isExecutableFile(atPath: autostartPath) {
-        executeCommand(autostartPath)
+        do {
+            try executeCommand(autostartPath)
+        } catch {
+            print("[WARN] Could not execute autostart (\(autostartPath)): \(error)")
+        }
     }
 }

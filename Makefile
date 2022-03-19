@@ -1,3 +1,5 @@
+config ?= debug
+
 WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
 LIBS_CFLAGS=\
@@ -45,10 +47,18 @@ Sources/awc_config/libawc_config.so: Sources/awc_config/src/lib.rs Sources/awc_c
 Sources/awcctl/target/release/awcctl: Sources/awcctl/src/main.rs
 	cd Sources/awcctl && cargo build --release
 
+target/awc: awc
+	mkdir -p target
+	ln -sf $(shell swift build -c $(config) --show-bin-path)/awc target/awc
+
+target/SpawnHelper: Sources/SpawnHelper/main.c
+	mkdir -p target
+	$(CC) --std=c99 -o $@ $^
+
 awc: Sources/awc_config/libawc_config.so \
   Sources/awcctl/target/release/awcctl \
   Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.h
-	swift build -c debug \
+	swift build -c $(config) \
 	    $(shell echo "$(LIBS_CFLAGS)" | tr ' ' '\n' | xargs -I {} echo -n "-Xcc {} " ) \
 		-Xcc -ISources/awc_config \
 		-Xlinker -LSources/awc_config/target/release/ \
@@ -70,7 +80,10 @@ test: awc
 clean:
 	rm -f Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.*
 	rm -f Sources/awc_config/*.a
-	rm -Rf .build
+	rm -Rf .build target
 
-.DEFAULT_GOAL=awc
-.PHONY: clean test
+all: target/awc target/SpawnHelper
+
+
+.DEFAULT_GOAL=all
+.PHONY: awc clean test
