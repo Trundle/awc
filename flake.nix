@@ -48,9 +48,7 @@
 
           dhall
           dhall-lsp-server
-
-          #(swift.overrideAttrs (attrs: attrs // { doCheck = false; }))
-	  swift
+          swift
         ];
       };
     };

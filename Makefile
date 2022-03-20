@@ -51,6 +51,9 @@ target/awc: awc
 	mkdir -p target
 	ln -sf $(shell swift build -c $(config) --show-bin-path)/awc target/awc
 
+target/awcctl: Sources/awcctl/target/release/awcctl
+	ln -sf $(shell realpath $<) target/awcctl
+
 target/SpawnHelper: Sources/SpawnHelper/main.c
 	mkdir -p target
 	$(CC) --std=c99 -o $@ $^
@@ -82,7 +85,7 @@ clean:
 	rm -f Sources/awc_config/*.a
 	rm -Rf .build target
 
-all: target/awc target/SpawnHelper
+all: target/awc target/awcctl target/SpawnHelper
 
 
 .DEFAULT_GOAL=all
