@@ -188,6 +188,7 @@ extension Awc {
     private func setToFloatingAndMove(_ surface: Surface) {
         self.modifyAndUpdate {
             if let output = $0.findOutput(view: surface) {
+                let outputBox = output.data.box
                 var box = $0.floating[surface] ?? surface.preferredFloatingBox(awc: self, output: output)
                 let startBox = box
 
@@ -198,7 +199,8 @@ extension Awc {
                         &box,
                         x: startBox.x + Int32(x - startX),
                         y: startBox.y + Int32(y - startY),
-                        bounds: output.data.box
+                        maxX: outputBox.width,
+                        maxY: outputBox.height
                     )
 
                     self.modifyAndUpdate {
@@ -241,6 +243,8 @@ extension Awc {
 
     private func setToFloatingAndResizeByFrame(_ surface: Surface) {
         if let output = self.viewSet.findOutput(view: surface) {
+            let outputBox = output.data.box
+
             let startX = self.cursor.pointee.x
             let startY = self.cursor.pointee.y
 
@@ -251,7 +255,7 @@ extension Awc {
                 let x = Int32(min(currentX, startX)) - margin
                 let y = Int32(min(currentY, startY)) - margin
                 return wlr_box(
-                    x: x, y: y,
+                    x: x - outputBox.x, y: y - outputBox.y,
                     width: Int32(max(currentX, startX)) - x + 2 * margin,
                     height: Int32(max(currentY, startY)) - y + 2 * margin)
             }
@@ -290,9 +294,9 @@ extension Awc {
     }
 }
 
-private func setWithinBounds(_ box: inout wlr_box, x: Int32, y: Int32, bounds: wlr_box) {
-    box.x = min(max(x, bounds.x), bounds.x + bounds.width - box.width)
-    box.y = min(max(y, bounds.y), bounds.y + bounds.height - box.height)
+private func setWithinBounds(_ box: inout wlr_box, x: Int32, y: Int32, maxX: Int32, maxY: Int32) {
+    box.x = min(max(x, 0), maxX - box.width)
+    box.y = min(max(y, 0), maxY - box.height)
 }
 
 private func drawResizeFrame(cairo: OpaquePointer, frame: wlr_box, color: float_rgba) {
