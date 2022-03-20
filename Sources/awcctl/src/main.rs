@@ -15,7 +15,7 @@ enum Request {
     SetLayout { layout_number: u8 },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Workspace {
     tag: String,
     views: Vec<String>,
@@ -27,6 +27,12 @@ fn get_arg_matches() -> clap::ArgMatches {
             clap::Arg::new("menu")
                 .long("menu")
                 .default_value("whisker-menu"),
+        )
+        .arg(
+            clap::Arg::new("json")
+                .long("json")
+                .takes_value(false)
+                .help("Output JSON"),
         )
         .subcommand(clap::Command::new("list-layouts"))
         .subcommand(clap::Command::new("list-workspaces"))
@@ -95,24 +101,32 @@ fn request_layouts(stream: &mut UnixStream) -> Result<Vec<String>, Box<dyn std::
     read_response(stream)
 }
 
-fn list_layouts(stream: &mut UnixStream) -> Result<(), Box<dyn std::error::Error>> {
+fn list_layouts(stream: &mut UnixStream, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let response = request_layouts(stream)?;
-    println!("{}", response.join("\n"));
+    if json {
+        println!("{}", serde_json::to_string_pretty(&response)?);
+    } else {
+        println!("{}", response.join("\n"));
+    }
 
     Ok(())
 }
 
-fn list_workspaces(stream: &mut UnixStream) -> Result<(), Box<dyn std::error::Error>> {
+fn list_workspaces(stream: &mut UnixStream, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     send_request(stream, &Request::ListWorkspaces {})?;
     let response: Vec<Workspace> = read_response(stream)?;
-    println!(
-        "{}",
-        response
-            .iter()
-            .map(|w| format!("{}: {}", w.tag, w.views.join(", ")))
-            .collect::<Vec<String>>()
-            .join("\n")
-    );
+    if json {
+        println!("{}", serde_json::to_string_pretty(&response)?);
+    } else {
+        println!(
+            "{}",
+            response
+                .iter()
+                .map(|w| format!("{}: {}", w.tag, w.views.join(", ")))
+                .collect::<Vec<String>>()
+                .join("\n")
+        );
+    }
 
     Ok(())
 }
@@ -162,13 +176,14 @@ fn select_layout(stream: &mut UnixStream, menu: &str) -> Result<(), Box<dyn std:
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = get_arg_matches();
+    let json = args.is_present("json");
 
     let socket_path = env::var("AWCSOCK")?;
     let mut socket = UnixStream::connect(socket_path)?;
 
     match args.subcommand() {
-        Some(("list-layouts", _)) => list_layouts(&mut socket)?,
-        Some(("list-workspaces", _)) => list_workspaces(&mut socket)?,
+        Some(("list-layouts", _)) => list_layouts(&mut socket, json)?,
+        Some(("list-workspaces", _)) => list_workspaces(&mut socket, json)?,
         Some(("new-workspace", new_ws_matches)) => {
             new_workspace(&mut socket, new_ws_matches.value_of_t_or_exit("tag"))?
         }
