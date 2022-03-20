@@ -157,7 +157,7 @@ are listed a few (without any claim to completeness):
 * `Wayfire <https://wayfire.org/>`_
 
 GNOME and KDE also work well with Wayland. See also `wlroot's project list
-<https://github.com/swaywm/wlroots/wiki/Projects-which-use-wlroots>`_.
+<https://gitlab.freedesktop.org/wlroots/wlroots/-/wikis/Projects-which-use-wlroots>`_.
 
 
 License
@@ -177,5 +177,5 @@ and released under `a BSD license
 
 
 .. _Sway: https://swaywm.org/
-.. _wlroots: https://github.com/swaywm/wlroots
+.. _wlroots: https://gitlab.freedesktop.org/wlroots/wlroots/
 .. _XMonad: https://xmonad.org/
