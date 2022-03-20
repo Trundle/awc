@@ -30,33 +30,37 @@ extension Awc {
         }
 
         // Activate the new surface
-        switch focus {
-        case .layer(_):
-            // XXX what to do here?
-            ()
-        case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface, true)
-        case .xwayland(let surface):
-            wlr_xwayland_surface_activate(surface, true)
-            wlr_xwayland_surface_restack(surface, nil, XCB_STACK_MODE_ABOVE)
-            if let xwayland: UnsafeMutablePointer<wlr_xwayland> = self.getExtensionData() {
-                wlr_xwayland_set_seat(xwayland, self.seat)
+        if let focus = focus {
+            switch focus {
+            case .layer(_):
+                // XXX what to do here?
+                ()
+            case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface, true)
+            case .xwayland(let surface):
+                wlr_xwayland_surface_activate(surface, true)
+                wlr_xwayland_surface_restack(surface, nil, XCB_STACK_MODE_ABOVE)
+                if let xwayland: UnsafeMutablePointer<wlr_xwayland> = self.getExtensionData() {
+                    wlr_xwayland_set_seat(xwayland, self.seat)
+                }
             }
-        case .none:
+            // Tell the seat to have the keyboard enter this surface. wlroots will keep
+            // track of this and automatically send key events to the appropriate
+            // clients without additional work on your part.
+            if let keyboard = wlr_seat_get_keyboard(self.seat) {
+                withUnsafeMutablePointer(to: &keyboard.pointee.keycodes.0) { keycodesPtr in
+                    wlr_seat_keyboard_notify_enter(
+                            self.seat,
+                            focus.wlrSurface,
+                            keycodesPtr,
+                            keyboard.pointee.num_keycodes,
+                            &keyboard.pointee.modifiers)
+                }
+            } else {
+                wlr_seat_keyboard_notify_enter(self.seat, focus.wlrSurface, nil, 0, nil)
+            }
+        } else {
             // There is no new surface -take away keyboard focus from previous surface
             wlr_seat_keyboard_clear_focus(self.seat)
-            return
-        }
-        // Tell the seat to have the keyboard enter this surface. wlroots will keep
-        // track of this and automatically send key events to the appropriate
-        // clients without additional work on your part.
-        let keyboard = wlr_seat_get_keyboard(self.seat)!
-        withUnsafeMutablePointer(to: &keyboard.pointee.keycodes.0) { keycodesPtr in
-            wlr_seat_keyboard_notify_enter(
-                    self.seat,
-                    focus!.wlrSurface,
-                    keycodesPtr,
-                    keyboard.pointee.num_keycodes,
-                    &keyboard.pointee.modifiers)
         }
     }
 
