@@ -4,7 +4,7 @@
 
 
 import awc_config
-import Cairo
+import CCairo
 import Libawc
 import Wlroots
 

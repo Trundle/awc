@@ -15,10 +15,11 @@ let package = Package(
         .package(url: "https://github.com/typelift/SwiftCheck.git", from: "0.12.0")
     ],
     targets: [
+        .target(name: "Cairo", dependencies: ["CCairo"]),
         .target(name: "Wlroots"),
         .target(name: "Libawc", dependencies: ["awc_config", "Wlroots"]),
         .systemLibrary(name: "awc_config"),
-        .systemLibrary(name: "Cairo"),
+        .systemLibrary(name: "CCairo"),
         .systemLibrary(name: "Drm"),
         .systemLibrary(name: "Gles2ext"),
         .systemLibrary(name: "Gles32"),
@@ -37,7 +38,7 @@ let package = Package(
         .target(
             name: "LayoutVisualizer",
             dependencies: [
-                "Cairo",
+                "CCairo",
                 "Libawc",
             ]
         ),

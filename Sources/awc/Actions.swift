@@ -1,7 +1,7 @@
 import Glibc
 import Foundation
 
-import Cairo
+import CCairo
 import Libawc
 import Wlroots
 
@@ -273,7 +273,7 @@ extension Awc {
                 currentY = y
 
                 drawResizeFrame(cairo: cairo, frame: toBox(0), color: self.config.colors.resize_frame.toFloatRgba())
-                neonRenderer.update(surface: cairoSurface, with: self.renderer)
+                neonRenderer.update(surfaces: [(0, 0, cairoSurface)], with: self.renderer)
 
                 // The blur of the neon effect makes the damage box a bit larger
                 var box = toBox(Int32(self.config.borderWidth + 10))

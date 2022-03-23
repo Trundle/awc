@@ -1,4 +1,4 @@
-module Cairo [system] {
+module CCairo [system] {
   header "shim.h"
   export *
 }

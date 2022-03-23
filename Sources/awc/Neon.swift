@@ -1,4 +1,4 @@
-import Cairo
+import CCairo
 import Gles2ext
 import Gles32
 import Wlroots
@@ -221,8 +221,11 @@ class NeonRenderer {
         }
     }
 
-    public func update(surface: OpaquePointer, with renderer: UnsafeMutablePointer<wlr_renderer>) {
-        self.fillOverlayTexture(surface: surface, renderer: renderer)
+    public func update(
+        surfaces: [(Int32, Int32, OpaquePointer)], 
+        with renderer: UnsafeMutablePointer<wlr_renderer>
+    ) {
+        self.fillOverlayTexture(surfaces: surfaces, renderer: renderer)
     }
 
     public func updateSize(width: Int32, height: Int32, scale: Float, renderer: UnsafeMutablePointer<wlr_renderer>) {
@@ -425,29 +428,36 @@ class NeonRenderer {
         gl { glBindTexture(GLenum(GL_TEXTURE_2D), 0) }
     }
 
-    private func fillOverlayTexture(surface: OpaquePointer, renderer: UnsafeMutablePointer<wlr_renderer>) {
-        let data = cairo_image_surface_get_data(surface)
-
+    private func fillOverlayTexture(
+        surfaces: [(Int32, Int32, OpaquePointer)], 
+        renderer: UnsafeMutablePointer<wlr_renderer>
+    ) {
         renderGl(with: renderer) {
             self.bind(texture: .overlay)
             defer {
                 self.unbindTexture()
             }
 
-            let stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, self.width)
-            gl { glPixelStorei(GLenum(GL_UNPACK_ROW_LENGTH_EXT), stride / 4) }
-            defer {
-                gl { glPixelStorei(GLenum(GL_UNPACK_ROW_LENGTH_EXT), 0) }
-            }
-            gl {
-                glTexSubImage2D(
-                    GLenum(GL_TEXTURE_2D),
-                    0, 0, 0,
-                    width,
-                    height,
-                    GLenum(GL_BGRA_EXT),
-                    GLenum(GL_UNSIGNED_BYTE),
-                    data)
+            for (offsetX, offsetY, surface) in surfaces {
+                let data = cairo_image_surface_get_data(surface)
+                let surfaceWidth = cairo_image_surface_get_width(surface)
+                let stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, surfaceWidth)
+                gl { glPixelStorei(GLenum(GL_UNPACK_ROW_LENGTH_EXT), stride / 4) }
+                defer {
+                    gl { glPixelStorei(GLenum(GL_UNPACK_ROW_LENGTH_EXT), 0) }
+                }
+                gl {
+                    glTexSubImage2D(
+                        GLenum(GL_TEXTURE_2D),
+                        0,
+                        offsetX,
+                        offsetY,
+                        surfaceWidth,
+                        cairo_image_surface_get_height(surface),
+                        GLenum(GL_BGRA_EXT),
+                        GLenum(GL_UNSIGNED_BYTE),
+                        data)
+                }
             }
         }
     }
