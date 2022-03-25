@@ -56,6 +56,10 @@ public class Context {
         cairo_set_line_width(self.rawCairo, lineWidth)
     }
 
+    public func setSource(r: Double, g: Double, b: Double) {
+        cairo_set_source_rgb(self.rawCairo, r, g, b)
+    }
+
     public func setSource(r: Double, g: Double, b: Double, a: Double) {
         cairo_set_source_rgba(self.rawCairo, r, g, b, a)
     }

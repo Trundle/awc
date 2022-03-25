@@ -16,14 +16,19 @@ private extension AwcColor {
     }
 }
 
-private extension Stack {
-    var count: Int {
+private extension List {
+    var count: Int32 {
         get {
-            return self.up.reduce(0, { (sum, _) in sum + 1 })
-                + self.down.reduce(0, { (sum, _) in sum + 1 })
-                + 1
+            return self.reduce(0, { (sum, _) in sum + 1 })
         }
     }
+}
+
+// Exists solely because tuples aren't hashable in Swift
+private struct SurfaceCacheKey: Equatable, Hashable {
+    let text: String
+    let font: String
+    let fontSize: Double
 }
 
 
@@ -34,10 +39,8 @@ public class OutputHud {
     private let neonRenderer = NeonRenderer()
     private var width: Int32 = 0
     private var height: Int32 = 0
-    private var surface: Cairo.Surface! = nil
-    // Initialize with a small, empty surface, because we need a valid Cairo context to
-    // determine the real required size
-    private var outputAndTagSurface: Cairo.Surface = Cairo.Surface(width: 1, height: 1)
+    private var measureContext: Cairo.Context = Cairo.Surface(width: 1, height: 1).context
+    private var textSurfaceCache: LRUCache<SurfaceCacheKey, Cairo.Surface> = LRUCache(maxSize: 64)
 
     init() {
     }
@@ -55,36 +58,27 @@ public class OutputHud {
             self.neonRenderer.updateSize(
                 width: self.width, height: self.height, scale: output.data.output.pointee.scale,
                 renderer: renderer)
-            self.surface = Cairo.Surface(
-                width: Int32(self.viewBoxWidth()), 
-                height: self.height / 3)
         }
-        self.surface.context.clear()
 
         let name = toString(array: output.data.output.pointee.name)
-        let outputAndTagPositionX = renderTagAndOutputName(
+        let (outputAndTagPositionX, outputAndTagSurface) = renderTagAndOutputName(
             tag: output.workspace.tag, outputName: name, font: font, colors: colors)
 
+        let rects: [(wlr_box, float_rgba)]
+        let titleSurfaces: [(Int32, Int32, Cairo.Surface)]
         if let stack = output.workspace.stack {
-            let requiredHeight = min(self.viewBoxHeight(stack), self.height - 48)
-            if self.surface.height < requiredHeight {
-                self.surface = Cairo.Surface(
-                    width: Int32(self.viewBoxWidth()),
-                    height: requiredHeight)
-            }
-            renderViewTitleBoxes(stack: stack, font: font, colors: colors)
+            rects = renderViewTitleBoxes(stack: stack, font: font, colors: colors)
+            titleSurfaces = renderViewTitleTexts(stack: stack, font: font, colors: colors)
+        } else {
+            rects = []
+            titleSurfaces = []
         }
 
-        self.outputAndTagSurface.withRawPointer { outputSurface in
-            self.surface.withRawPointer { viewSurface in
-                self.neonRenderer.update(
-                    surfaces: [
-                        (outputAndTagPositionX, 48, outputSurface),
-                        (Int32(Double(width) / 2 - self.viewBoxWidth() / 2), 48, viewSurface)
-                    ],
-                    with: renderer)
-            }
-        }
+        self.neonRenderer.update(
+            rects: rects,
+            surfaces: [
+                (outputAndTagPositionX, Int32(48), outputAndTagSurface),
+            ] + titleSurfaces)
     }
 
     public func render<L: Layout>(on output: Output<L>, with renderer: UnsafeMutablePointer<wlr_renderer>)
@@ -101,12 +95,16 @@ public class OutputHud {
         outputName: String,
         font: String,
         colors: AwcOutputHudColors
-    ) -> Int32 {
-        var cairo = self.outputAndTagSurface.context
-
-        // Determine text size (to know how large our box needs to be)
+    ) -> (Int32, Cairo.Surface) {
         let fontSize = 18.0
         let text = "\(tag) @ \(outputName)"
+        if let surface = self.lookupCached(text: text, font: font, fontSize: fontSize) {
+            return (Int32(Double(width) - Self.xMargin) - surface.width, surface)
+        }
+
+        var cairo = self.measureContext
+
+        // Determine text size (to know how large our box needs to be)
         cairo.selectFontFace(family: font)
         cairo.set(fontSize: fontSize)
         var textExtents = cairo_text_extents_t()
@@ -117,14 +115,12 @@ public class OutputHud {
         let rectangleWidth = textExtents.width + padding
         let rectangleHeight = textExtents.height + padding
 
-        if createOutputAndTagSurfaceIfRequired(
+        let surface = Cairo.Surface(
             width: Int32(rectangleWidth + 2 * stroke),
             height: Int32(rectangleHeight + 2 * stroke))
-        {
-            cairo = self.outputAndTagSurface.context
-            cairo.selectFontFace(family: font)
-            cairo.set(fontSize: fontSize)
-        }
+        cairo = surface.context
+        cairo.selectFontFace(family: font)
+        cairo.set(fontSize: fontSize)
 
         cairo.clear()
 
@@ -144,92 +140,160 @@ public class OutputHud {
         cairo.moveTo(x: 12 - textExtents.x_bearing, y: 12 - textExtents.y_bearing)
         cairo.show(text: text)
 
-        return Int32(Double(width) - Self.xMargin - rectangleWidth)
+        self.textSurfaceCache[SurfaceCacheKey(text: text, font: font, fontSize: fontSize)] = surface
+
+        return (Int32(Double(width) - Self.xMargin - rectangleWidth), surface)
     }
 
-    private func createOutputAndTagSurfaceIfRequired(width: Int32, height: Int32) -> Bool {
-        guard self.outputAndTagSurface.width < width || self.outputAndTagSurface.height < height
-        else {
-            return false;
+    private func renderViewTitleBoxes(stack: Stack<Surface>, font: String, colors: AwcOutputHudColors
+    ) -> [(wlr_box, float_rgba)] {
+        let lineWidth: Int32 = 1
+        let boxWidth = Int32(self.viewBoxWidth()) - 2 * lineWidth
+        let xPos = Int32(Float(self.width) / 2 - Float(boxWidth) / 2)
+
+        let upCount = stack.up.count
+        let upHeight = upCount * 34
+        let downCount = stack.down.count
+        let downHeight = downCount * 34
+
+        var boxes = [
+            (
+                wlr_box(x: xPos + 4, y: 48, width: boxWidth - 8, height: upHeight), 
+                colors.inactive_background.toFloatRgba()
+            ),
+            (
+                wlr_box(x: xPos, y: 48 + upHeight, width: boxWidth, height: 52),
+                colors.active_background.toFloatRgba()
+            ),
+            (
+                wlr_box(x: xPos + 4, y: 48 + upHeight + 60, width: boxWidth - 8, height: downHeight),
+                colors.inactive_background.toFloatRgba()
+            ),
+            // Border around active box
+            (
+                wlr_box(x: xPos - 1, y: 48 + upHeight, width: 2, height: 52),
+                colors.active_glow.toFloatRgba()
+            ),
+            (
+                wlr_box(x: xPos + boxWidth - 1, y: 48 + upHeight, width: 2, height: 54),
+                colors.active_glow.toFloatRgba()
+            ),
+            (
+                wlr_box(x: xPos, y: 48 + upHeight, width: boxWidth, height: 2),
+                colors.active_glow.toFloatRgba()
+            ),
+            (
+                wlr_box(x: xPos - 1, y: 48 + upHeight + 52, width: boxWidth, height: 2),
+                colors.active_glow.toFloatRgba()
+            )
+        ]
+
+        // Add lines to up boxes
+        for i in 0..<upCount {
+            boxes.append((
+                wlr_box(
+                    x: xPos + 4,
+                    y: 48 + (i + 1) * 34,
+                    width: boxWidth - 8,
+                    height: lineWidth),
+                colors.inactive_foreground.toFloatRgba()
+            ))
         }
 
-        self.outputAndTagSurface = Cairo.Surface(width: width, height: height)
-        return true
+        // Add lines to down boxes
+        for i in 0..<downCount {
+            boxes.append((
+                wlr_box(
+                    x: xPos + 4,
+                    y: 48 + upHeight + 60 + (i + 1) * 34,
+                    width: boxWidth - 8,
+                    height: lineWidth),
+                colors.inactive_foreground.toFloatRgba()
+            ))
+        }
+
+        return boxes
     }
 
-    private func renderViewTitleBoxes(stack: Stack<Surface>, font: String, colors: AwcOutputHudColors) {
-        let lineWidth = 1.0
-        let boxWidth = self.viewBoxWidth() - 2 * lineWidth
-        let xPos = lineWidth
-        let cairo = self.surface.context
-        let surfaces = stack.toList()
+    private func renderViewTitleTexts(stack: Stack<Surface>, font: String, colors: AwcOutputHudColors) 
+    -> [(Int32, Int32, Cairo.Surface)] {
+        let boxWidth = self.viewBoxWidth() - 2
+        let xPos = Int32(Double(self.width) / 2 - boxWidth / 2 + 6)
 
-        cairo.set(lineWidth: lineWidth)
+        var currentY: Int32 = 48
 
-        cairo.selectFontFace(family: font)
+        var result: [(Int32, Int32, Cairo.Surface)] = []
+        for surface in stack.up.reverse() {
+            result.append((
+                xPos, currentY + 6,
+                renderText(
+                    surface.title,
+                    font: font,
+                    fontSize: 24,
+                    maxWidth: boxWidth - 12,
+                    color: colors.inactive_foreground)
+            ))
+            currentY += 34
+        }
+
+        result.append((
+                xPos, currentY + 6,
+                renderText(
+                    stack.focus.title,
+                    font: font,
+                    fontSize: 36,
+                    maxWidth: boxWidth - 4,
+                    color: colors.active_foreground)
+            ))
+        currentY += 60
+
+        for surface in stack.down {
+            result.append((
+                xPos, currentY + 6,
+                renderText(
+                    surface.title,
+                    font: font,
+                    fontSize: 24,
+                    maxWidth: boxWidth - 12,
+                    color: colors.inactive_foreground)
+            ))
+            currentY += 34
+        }
+        return result
+    }
+
+    private func renderText(
+        _ text: String,
+        font: String,
+        fontSize: Double,
+        maxWidth: Double,
+        color: AwcColor) -> Cairo.Surface {
+        if let surface = self.lookupCached(text: text, font: font, fontSize: fontSize) {
+            return surface
+        }
+
         var textExtents = cairo_text_extents_t()
+        self.measureContext.selectFontFace(family: font)
+        self.measureContext.set(fontSize: fontSize)
+        self.measureContext.extents(text: text, &textExtents)
 
-        var currentY = 0.0
-        for surface in surfaces {
-            let title = surface.title
+        let surface = Cairo.Surface(
+            width: Int32(min(maxWidth, textExtents.width)),
+            height: Int32(fontSize))
+        let cairo = surface.context
+        cairo.selectFontFace(family: font)
+        cairo.set(fontSize: fontSize)
+        color.setSourceRgb(cairo: cairo)
+        cairo.moveTo(x: 0, y: fontSize / 2 - (textExtents.height / 2 + textExtents.y_bearing))
+        cairo.show(text: text)
 
-            cairo.save()
-            defer {
-                cairo.restore()
-            }
+        self.textSurfaceCache[SurfaceCacheKey(text: text, font: font, fontSize: fontSize)] = surface
 
-            if surface == stack.focus {
-                // Background
-                colors.active_background.setSourceRgb(cairo: cairo)
-                cairo.rectangle(x: xPos, y: currentY, width: boxWidth, height: 52)
-                cairo.fill()
-
-                // Lightning outline
-                colors.active_glow.setSourceRgb(cairo: cairo)
-                cairo.rectangle(x: xPos, y: currentY, width: boxWidth, height: 52)
-                cairo.set(lineWidth: 2.0)
-                cairo.stroke()
-
-                // Clip so long titles don't exceed the box
-                cairo.rectangle(x: xPos, y: currentY, width: boxWidth, height: 52)
-                cairo.clip()
-
-                colors.active_foreground.setSourceRgb(cairo: cairo)
-                cairo.set(fontSize: 36)
-                cairo.extents(text: title, &textExtents)
-                cairo.moveTo(
-                    x: xPos + 6 - textExtents.x_bearing,
-                    y: currentY + 24 - textExtents.y_bearing - textExtents.height / 2)
-                cairo.show(text: title)
-
-                currentY += 62
-            } else {
-                cairo.set(fontSize: 24)
-                cairo.extents(text: title, &textExtents)
-
-                colors.inactive_background.setSourceRgb(cairo: cairo)
-                cairo.rectangle(x: xPos + 4, y: currentY, width: boxWidth - 8, height: 34)
-                cairo.fill()
-
-                cairo.rectangle(x: xPos + 4, y: currentY, width: boxWidth - 8, height: 34)
-                cairo.clip()
-
-                colors.inactive_foreground.setSourceRgb(cairo: cairo)
-                cairo.moveTo(
-                    x: xPos + 6 - textExtents.x_bearing,
-                    y: currentY + 17 - textExtents.y_bearing - textExtents.height / 2)
-                cairo.show(text: title)
-
-                cairo.moveTo(x: xPos + 4, y: currentY + 33)
-                cairo.lineTo(x: xPos + 4 + boxWidth - 8, y: currentY + 33)
-                cairo.stroke()
-
-                currentY += 34
-            }
-        }
+        return surface
     }
 
-    private func viewBoxHeight(_ stack: Stack<Surface>) -> Int32 {
-        return Int32(62 + (stack.count - 1) * 34 + 4)
+    private func lookupCached(text: String, font: String, fontSize: Double) -> Cairo.Surface? {
+        return self.textSurfaceCache.get(
+            forKey: SurfaceCacheKey(text: text, font: font, fontSize: fontSize))
     }
 }

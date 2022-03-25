@@ -122,6 +122,8 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     // Whether the "output HUD" is visible
     internal var outputHudVisible: Bool = false
     internal var config: Config
+    /// Whether the default cursor image is shown
+    private var defaultCursorImageShown: Bool = false
 
     init(
         wlEventHandler: WlEventHandler,
@@ -376,6 +378,7 @@ extension Awc {
 
         if let dragging = self.dragging {
             dragging(time, cx, cy)
+            self.defaultCursorImageShown = false
         } else if let (surface, (startX, startY)) = self.draggingStart {
             // DnD for XWayland: the initial surface receives all motion events, even if the
             // pointer leaves the surface
@@ -383,14 +386,19 @@ extension Awc {
             let sy = startY + cy
             wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
             wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
+            self.defaultCursorImageShown = false
         } else if let (_, surface, sx, sy) = self.viewAtHook(self, cx, cy) {
             wlr_seat_pointer_notify_enter(self.seat, surface, sx, sy)
             wlr_seat_pointer_notify_motion(self.seat, time, sx, sy)
+            self.defaultCursorImageShown = false
         } else {
             // If there's no surface under the cursor, set the cursor image to a
             // default. This is what makes the cursor image appear when you move it
             // around the screen, not over any surfaces.
-            wlr_xcursor_manager_set_cursor_image(self.cursorManager, "left_ptr", self.cursor)
+            if !self.defaultCursorImageShown {
+                wlr_xcursor_manager_set_cursor_image(self.cursorManager, "left_ptr", self.cursor)
+                self.defaultCursorImageShown = true
+            }
             wlr_seat_pointer_clear_focus(self.seat)
         }
     }
@@ -756,7 +764,7 @@ extension Awc: OutputDamage {
         // reason, wlroots provides a software fallback, which we ask it to render
         // here. wlr_cursor handles configuring hardware vs software cursors for you,
         // and this function is a no-op when hardware cursors are in use.
-        wlr_output_render_software_cursors(wlrOutput, nil)
+        wlr_output_render_software_cursors(wlrOutput, &bufferDamage)
 
         self.rendererEnd(wlrOutput: wlrOutput, damage: output.data.damage)
     }
@@ -790,7 +798,7 @@ extension Awc: OutputDamage {
         wlr_renderer_end(self.renderer)
 
         var width: Int32 = 0
-        var height: Int32 = 9
+        var height: Int32 = 0
         wlr_output_transformed_resolution(wlrOutput, &width, &height)
 
         var frameDamage = pixman_region32_t()

@@ -35,6 +35,14 @@ class Program {
         gl { glUniform1i(location, GLint(value)) }
     }
 
+    public func set(name: String, _ v1: Float, _ v2: Float, _ v3: Float, _ v4: Float) {
+    #if OPENGL_DEBUG
+        assert(self.isActive, "set() called, but program not active")
+    #endif
+        let location = self.getUniformLocation(name: name)
+        gl { glUniform4f(location, GLfloat(v1), GLfloat(v2), GLfloat(v3), GLfloat(v4)) }
+    }
+
     public func set(name: String, matrix: inout matrix9) {
     #if OPENGL_DEBUG
         assert(self.isActive, "set() called, but program not active")

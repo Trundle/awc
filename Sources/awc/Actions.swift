@@ -1,7 +1,7 @@
 import Glibc
 import Foundation
 
-import CCairo
+import Cairo
 import Libawc
 import Wlroots
 
@@ -265,15 +265,17 @@ extension Awc {
             neonRenderer.updateSize(
                 width: box.width, height: box.height, scale: output.data.output.pointee.scale,
                 renderer: self.renderer)
-            let cairoSurface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, box.width, box.height)!
-            let cairo = cairo_create(cairoSurface)!
+            let cairoSurface = Cairo.Surface(width: box.width, height: box.height)
 
             self.dragging = { (_, x, y) in
                 currentX = x
                 currentY = y
 
-                drawResizeFrame(cairo: cairo, frame: toBox(0), color: self.config.colors.resize_frame.toFloatRgba())
-                neonRenderer.update(surfaces: [(0, 0, cairoSurface)], with: self.renderer)
+                drawResizeFrame(
+                    cairo: cairoSurface.context,
+                    frame: toBox(0),
+                    color: self.config.colors.resize_frame.toFloatRgba())
+                neonRenderer.update(rects: [], surfaces: [(0, 0, cairoSurface)])
 
                 // The blur of the neon effect makes the damage box a bit larger
                 var box = toBox(Int32(self.config.borderWidth + 10))
@@ -299,37 +301,32 @@ private func setWithinBounds(_ box: inout wlr_box, x: Int32, y: Int32, maxX: Int
     box.y = min(max(y, 0), maxY - box.height)
 }
 
-private func drawResizeFrame(cairo: OpaquePointer, frame: wlr_box, color: float_rgba) {
-    // Clear surface
-    cairo_save(cairo)
-    cairo_set_source_rgba(cairo, 0, 0, 0, 0)
-    cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE)
-    cairo_paint(cairo)
-    cairo_restore(cairo)
+private func drawResizeFrame(cairo: Cairo.Context, frame: wlr_box, color: float_rgba) {
+    cairo.clear()
 
     // Fill background
-    cairo_set_source_rgba(cairo, Double(color.r), Double(color.g), Double(color.b), Double(color.a))
-    cairo_rectangle(cairo, Double(frame.x), Double(frame.y), Double(frame.width), Double(frame.height))
-    cairo_fill(cairo)
+    cairo.setSource(r: Double(color.r), g: Double(color.g), b: Double(color.b), a: Double(color.a))
+    cairo.rectangle(x: Double(frame.x), y: Double(frame.y), width: Double(frame.width), height: Double(frame.height))
+    cairo.fill()
 
-    cairo_set_line_width(cairo, 2.0)
+    cairo.set(lineWidth: 2.0)
 
     // Draw grid
-    cairo_set_source_rgb(cairo, 1, 1, 1)
+    cairo.setSource(r: 1, g: 1, b: 1)
     let gridSize: Int32 = 150
     for y in stride(from: frame.y + gridSize, to: frame.y + frame.height, by: Int(gridSize)) {
-        cairo_move_to(cairo, Double(frame.x), Double(y))
-        cairo_line_to(cairo, Double(frame.x + frame.width), Double(y))
-        cairo_stroke(cairo)
+        cairo.moveTo(x: Double(frame.x), y: Double(y))
+        cairo.lineTo(x: Double(frame.x + frame.width), y: Double(y))
+        cairo.stroke()
     }
     for x in stride(from: frame.x + gridSize, to: frame.x + frame.width, by: Int(gridSize)) {
-        cairo_move_to(cairo, Double(x), Double(frame.y))
-        cairo_line_to(cairo, Double(x), Double(frame.y + frame.height))
-        cairo_stroke(cairo)
+        cairo.moveTo(x: Double(x), y: Double(frame.y))
+        cairo.lineTo(x: Double(x), y: Double(frame.y + frame.height))
+        cairo.stroke()
     }
 
     // Outer glow
-    cairo_set_source_rgba(cairo, 1, 1, 1, 1)
-    cairo_rectangle(cairo, Double(frame.x), Double(frame.y), Double(frame.width), Double(frame.height))
-    cairo_stroke(cairo)
+    cairo.setSource(r: 1, g: 1, b: 1, a: 1)
+    cairo.rectangle(x: Double(frame.x), y: Double(frame.y), width: Double(frame.width), height: Double(frame.height))
+    cairo.stroke()
 }
