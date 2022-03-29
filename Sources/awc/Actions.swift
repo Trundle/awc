@@ -265,17 +265,15 @@ extension Awc {
             neonRenderer.updateSize(
                 width: box.width, height: box.height, scale: output.data.output.pointee.scale,
                 renderer: self.renderer)
-            let cairoSurface = Cairo.Surface(width: box.width, height: box.height)
 
             self.dragging = { (_, x, y) in
                 currentX = x
                 currentY = y
 
-                drawResizeFrame(
-                    cairo: cairoSurface.context,
+                let rects = drawResizeFrame(
                     frame: toBox(0),
                     color: self.config.colors.resize_frame.toFloatRgba())
-                neonRenderer.update(rects: [], surfaces: [(0, 0, cairoSurface)])
+                neonRenderer.update(rects: rects, surfaces: [])
 
                 // The blur of the neon effect makes the damage box a bit larger
                 var box = toBox(Int32(self.config.borderWidth + 10))
@@ -301,32 +299,25 @@ private func setWithinBounds(_ box: inout wlr_box, x: Int32, y: Int32, maxX: Int
     box.y = min(max(y, 0), maxY - box.height)
 }
 
-private func drawResizeFrame(cairo: Cairo.Context, frame: wlr_box, color: float_rgba) {
-    cairo.clear()
-
-    // Fill background
-    cairo.setSource(r: Double(color.r), g: Double(color.g), b: Double(color.b), a: Double(color.a))
-    cairo.rectangle(x: Double(frame.x), y: Double(frame.y), width: Double(frame.width), height: Double(frame.height))
-    cairo.fill()
-
-    cairo.set(lineWidth: 2.0)
+private func drawResizeFrame(frame: wlr_box, color: float_rgba) -> [(wlr_box, float_rgba)] {
+    let highlight = float_rgba(r: 1, g: 1, b: 1, a: 1)
+    var rects: [(wlr_box, float_rgba)] = [
+        (frame, color),
+        // Outer glow
+        (wlr_box(x: frame.x, y: frame.y, width: frame.width, height: 2), highlight),
+        (wlr_box(x: frame.x, y: frame.y + frame.height, width: frame.width, height: 2), highlight),
+        (wlr_box(x: frame.x, y: frame.y, width: 2, height: frame.height), highlight),
+        (wlr_box(x: frame.x + frame.width, y: frame.y, width: 2, height: frame.height), highlight),
+    ]
 
     // Draw grid
-    cairo.setSource(r: 1, g: 1, b: 1)
     let gridSize: Int32 = 150
     for y in stride(from: frame.y + gridSize, to: frame.y + frame.height, by: Int(gridSize)) {
-        cairo.moveTo(x: Double(frame.x), y: Double(y))
-        cairo.lineTo(x: Double(frame.x + frame.width), y: Double(y))
-        cairo.stroke()
+        rects.append((wlr_box(x: frame.x, y: y, width: frame.width, height: 2), highlight))
     }
     for x in stride(from: frame.x + gridSize, to: frame.x + frame.width, by: Int(gridSize)) {
-        cairo.moveTo(x: Double(x), y: Double(frame.y))
-        cairo.lineTo(x: Double(x), y: Double(frame.y + frame.height))
-        cairo.stroke()
+        rects.append((wlr_box(x: x, y: frame.y, width: 2, height: frame.height), highlight))
     }
 
-    // Outer glow
-    cairo.setSource(r: 1, g: 1, b: 1, a: 1)
-    cairo.rectangle(x: Double(frame.x), y: Double(frame.y), width: Double(frame.width), height: Double(frame.height))
-    cairo.stroke()
+    return rects
 }

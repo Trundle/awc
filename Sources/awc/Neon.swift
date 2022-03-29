@@ -142,10 +142,9 @@ void main() {
     vec4 overlayColor = texture(overlay, TexCoord);
     vec3 bloomColor = texture(bloomBlur, TexCoord).rgb;
     overlayColor.rgb += bloomColor.rgb * vec3(1.25);
-    float brightness = dot(FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
-    if (brightness < 0.5 && overlayColor.a > 0.5) {
-        overlayColor.b += TexCoord.x * 0.25;
-        overlayColor.g += TexCoord.y * 0.25;
+    if (overlayColor.a > 0.5) {
+        float mixValue = distance(TexCoord, vec2(0, 0));
+        overlayColor.rgb += mix(vec3(0.25), vec3(0), mixValue);
     }
 
     FragColor = overlayColor;
