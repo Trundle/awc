@@ -49,6 +49,10 @@
           dhall
           dhall-lsp-server
           swift
+
+          # Only used for validation
+          glslang
+          nixpkgs-fmt
         ];
       };
     };

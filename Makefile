@@ -85,8 +85,14 @@ clean:
 	rm -f Sources/awc_config/*.a
 	rm -Rf .build target
 
+validateShaders:
+	python Tools/validate_shaders.py
+
+validate: validateShaders
+	nixpkgs-fmt --check flake.nix
+
 all: target/awc target/awcctl target/SpawnHelper
 
 
 .DEFAULT_GOAL=all
-.PHONY: awc clean test
+.PHONY: awc clean test validate validateShaders
