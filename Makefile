@@ -84,6 +84,8 @@ clean:
 	rm -f Sources/Wlroots/xdg-shell-protocol.h Sources/Wlroots/xdg-shell-protocol.c Sources/Wlroots/wlr-layer-shell-unstable-v1-protocol.*
 	rm -f Sources/awc_config/*.a
 	rm -Rf .build target
+	cd Sources/awc_config && cargo clean
+	cd Sources/awcctl && cargo clean
 
 validateShaders:
 	python Tools/validate_shaders.py
