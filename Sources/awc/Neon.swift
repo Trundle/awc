@@ -144,7 +144,7 @@ void main() {
     overlayColor.rgb += bloomColor.rgb * vec3(1.25);
     if (overlayColor.a > 0.5) {
         float mixValue = distance(TexCoord, vec2(0, 0));
-        overlayColor.rgb += mix(vec3(0.25), vec3(0), mixValue);
+        overlayColor.rgb -= mix(vec3(0), vec3(0.25), mixValue);
     }
 
     FragColor = overlayColor;
