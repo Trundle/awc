@@ -7,6 +7,12 @@ import Libawc
 import Wlroots
 
 
+// MARK: Wlroots compat
+
+#if WLROOTS_0_14
+typealias wlr_allocator = UInt8
+#endif
+
 // MARK: Awc
 
 struct KeyModifiers: OptionSet, Hashable {
@@ -88,6 +94,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let backend: UnsafeMutablePointer<wlr_backend>
     let outputLayout: UnsafeMutablePointer<wlr_output_layout>
     let renderer: UnsafeMutablePointer<wlr_renderer>
+    let allocator: UnsafeMutablePointer<wlr_allocator>
     let noOpOutput: UnsafeMutablePointer<wlr_output>
     let noOpOutputDamage: UnsafeMutablePointer<wlr_output_damage>
     let cursor: UnsafeMutablePointer<wlr_cursor>
@@ -132,6 +139,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         noOpOutput: UnsafeMutablePointer<wlr_output>,
         outputLayout: UnsafeMutablePointer<wlr_output_layout>,
         renderer: UnsafeMutablePointer<wlr_renderer>,
+        allocator: UnsafeMutablePointer<wlr_allocator>,
         cursor: UnsafeMutablePointer<wlr_cursor>,
         cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>,
         seat: UnsafeMutablePointer<wlr_seat>,
@@ -162,6 +170,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.backend = backend
         self.outputLayout = outputLayout
         self.renderer = renderer
+        self.allocator = allocator
         self.noOpOutput = noOpOutput
         self.cursor = cursor
         self.cursorManager = cursorManager
@@ -451,7 +460,14 @@ extension Awc {
     }
 
     private func handleNewOutput(_ wlrOutput: UnsafeMutablePointer<wlr_output>) {
-        let name = toString(array: wlrOutput.pointee.name)
+#if !WLROOTS_0_14
+        guard wlr_output_init_render(wlrOutput, self.allocator, self.renderer) else {
+            print("[WARN] Could not initialize output render")
+            return
+        }
+#endif
+
+        let name = wlrOutput.name
 
         if let (_, _, scale) = self.config.outputConfigs[name] {
             wlr_output_set_scale(wlrOutput, scale)
@@ -858,18 +874,19 @@ func main() {
     }
 
     // Create a no-op backend and output. Used when there is no other output.
-    guard let noopBackend = wlr_noop_backend_create(wlDisplay) else {
-        print("[FATAL] Could not create no-op backend :(")
+    guard let noopBackend = wlr_headless_backend_create(wlDisplay) else {
+        print("[FATAL] Could not create headless backend :(")
         return
     }
     defer {
         wlr_backend_destroy(noopBackend)
     }
-    guard let noopOutput = wlr_noop_add_output(noopBackend) else {
-        print("[FATAL] Could not create no-op output :(")
+    guard let noopOutput = wlr_headless_add_output(noopBackend, 1024, 768) else {
+        print("[FATAL] Could not create headless output :(")
         return
     }
 
+#if WLROOTS_0_14
     // If we don't provide a renderer, autocreate makes a GLES2 renderer for us.
     // The renderer is responsible for defining the various pixel formats it
     // supports for shared memory, this configures that for clients.
@@ -877,6 +894,17 @@ func main() {
         print("[FATAL] Could not create renderer :(")
         return
     }
+    let allocator = UnsafeMutablePointer<wlr_allocator>.allocate(capacity: 0)
+#else
+    guard let renderer = wlr_renderer_autocreate(backend) else {
+        print("[FATAL] Could not create renderer :(")
+        return
+    }
+    guard let allocator = wlr_allocator_autocreate(backend, renderer) else {
+        print("[FATAL] Could not create allocator :(")
+        return
+    }
+#endif
     wlr_renderer_init_wl_display(renderer, wlDisplay)
 
     guard wlr_renderer_is_gles2(renderer) else {
@@ -971,6 +999,7 @@ func main() {
         noOpOutput: noopOutput,
         outputLayout: outputLayout!,
         renderer: renderer,
+        allocator: allocator,
         cursor: cursor,
         cursorManager: cursorManager!,
         seat: seat,

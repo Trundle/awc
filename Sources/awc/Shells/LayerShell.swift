@@ -85,12 +85,12 @@ private let layersAboveShell = [
 extension Awc: LayerShell {
     func newSurface(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
         guard let layerShellData: LayerShellData = self.getExtensionData() else {
-            wlr_layer_surface_v1_close(layerSurface)
+            wlr_layer_surface_v1_destroy(layerSurface)
             return
         }
 
         guard layerShellLayers.contains(layerSurface.pointee.current.layer) else {
-            wlr_layer_surface_v1_close(layerSurface)
+            wlr_layer_surface_v1_destroy(layerSurface)
             return
         }
 
@@ -115,7 +115,7 @@ extension Awc: LayerShell {
             let usableBox = self.arrangeLayers(wlrOutput: output.data.output, layers: layers)
             layerShellData.usableBoxes[output.data.output] = usableBox
         } else {
-            wlr_layer_surface_v1_close(layerSurface)
+            wlr_layer_surface_v1_destroy(layerSurface)
         }
     }
 
@@ -169,7 +169,7 @@ extension Awc: LayerShell {
     }
 
     func map(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
-        withLayerData(layerSurface, or: wlr_layer_surface_v1_close(layerSurface)) { layerData in
+        withLayerData(layerSurface, or: wlr_layer_surface_v1_destroy(layerSurface)) { layerData in
             layerData.unmapped.remove(layerSurface)
             layerData.mapped.insert(layerSurface)
             wlr_surface_send_enter(layerSurface.pointee.surface, layerSurface.pointee.output)
@@ -187,7 +187,7 @@ extension Awc: LayerShell {
     }
 
     func unmap(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
-        withLayerData(layerSurface, or: wlr_layer_surface_v1_close(layerSurface)) { layerData in
+        withLayerData(layerSurface, or: wlr_layer_surface_v1_destroy(layerSurface)) { layerData in
             self.removeListener(layerSurface, MappedLayerListener.self)
 
             layerData.mapped.remove(layerSurface)
@@ -300,7 +300,7 @@ extension Awc: LayerShell {
             }
 
             guard box.width > 0 && box.height > 0 else {
-                wlr_layer_surface_v1_close(layerSurface)
+                wlr_layer_surface_v1_destroy(layerSurface)
                 continue
             }
 
@@ -451,8 +451,13 @@ extension Awc: LayerShellPopup {
                let output = findOutput(for: parentSurface)
             {
                 let surface = popup.pointee.base.pointee.surface
+#if WLROOTS_0_14
                 let popupSx = popup.pointee.geometry.x - popup.pointee.base.pointee.geometry.x
                 let popupSy = popup.pointee.geometry.y - popup.pointee.base.pointee.geometry.y
+#else
+                let popupSx = popup.pointee.geometry.x - popup.pointee.base.pointee.current.geometry.x
+                let popupSy = popup.pointee.geometry.y - popup.pointee.base.pointee.current.geometry.y
+#endif
 
                 var damage = pixman_region32_t()
                 defer {
@@ -510,7 +515,7 @@ private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandle
 
             data.layers.removeValue(forKey: output)
         }
-        wlr_layer_surface_v1_close(self.surface)
+        wlr_layer_surface_v1_destroy(self.surface)
     }
 
     private func findInteractiveMappedLayerSurfaceBy(
@@ -725,6 +730,13 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
         }
     }
 }
+
+
+#if WLROOTS_0_14
+private func wlr_layer_surface_v1_destroy(_ surface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
+    wlr_layer_surface_v1_close(surface)
+}
+#endif
 
 
 func layerViewAt<L: Layout>(

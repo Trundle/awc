@@ -60,7 +60,7 @@ public class OutputHud {
                 renderer: renderer)
         }
 
-        let name = toString(array: output.data.output.pointee.name)
+        let name = output.data.output.name
         let (outputAndTagPositionX, outputAndTagSurface) = renderTagAndOutputName(
             tag: output.workspace.tag, outputName: name, font: font, colors: colors)
 
