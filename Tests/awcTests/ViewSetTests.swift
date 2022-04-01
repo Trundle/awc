@@ -7,15 +7,13 @@ import SwiftCheck
 
 // MARK: Equatable implementations for assertions
 
-extension Stack: Equatable where T: Equatable {
-    public static func ==(lhs: Stack<T>, rhs: Stack<T>) -> Bool {
-        lhs.toList() == rhs.toList()
-    }
+fileprivate func equals(_ lhs: Stack<TestView>?, _ rhs: Stack<TestView>?) -> Bool {
+    lhs?.toList() == rhs?.toList()
 }
 
 extension Workspace: Equatable where L == TestLayout {
     public static func ==(lhs: Workspace<TestLayout>, rhs: Workspace<TestLayout>) -> Bool {
-        lhs.tag == rhs.tag && lhs.stack == rhs.stack
+        lhs.tag == rhs.tag && equals(lhs.stack, rhs.stack)
     }
 }
 

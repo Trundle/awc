@@ -97,6 +97,55 @@ extension Stack {
     }
 }
 
+extension Stack: Sequence {
+    // Specialize contains (hypothesis: focus often what's looked for)
+    public func contains(where pred: (T) -> Bool) -> Bool {
+        pred(self.focus) || self.up.contains(where: pred) || self.down.contains(where: pred)
+    }
+
+    public func makeIterator() -> Iterator {
+        return Iterator(stack: self)
+    }
+
+    public struct Iterator: IteratorProtocol {
+        public typealias Element = T
+
+        private enum State {
+            case upIter
+            case downIter
+            case done
+        }
+
+        private let stack: Stack<T>
+        private var state: State
+        private var iter: List<T>.Iterator
+
+        init(stack: Stack<T>) {
+            self.state = .upIter
+            self.stack = stack
+            self.iter = stack.up.reverse().makeIterator()
+        }
+
+        mutating public func next() -> Self.Element? {
+            if let next = self.iter.next() {
+                return next
+            } else {
+                switch self.state {
+                case .upIter:
+                    self.state = .downIter
+                    self.iter = self.stack.down.makeIterator()
+                    return stack.focus
+                case .downIter:
+                    self.state = .done
+                    return nil
+                case .done:
+                    return nil
+                }
+            }
+        }
+    }
+}
+
 extension Stack where T: Equatable {
     public func contains(_ element: T) -> Bool {
         self.focus == element || self.up.contains(element) || self.down.contains(element)
