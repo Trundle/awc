@@ -10,13 +10,11 @@ public enum List<T> {
 extension List: Sequence {
     public typealias Element = T
 
-    public typealias Iterator = ListIterator<T>
-
     public func makeIterator() -> Iterator {
-        ListIterator(self)
+        Iterator(self)
     }
 
-    public struct ListIterator<T>: IteratorProtocol {
+    public struct Iterator: IteratorProtocol {
 
         public typealias Element = T
 
