@@ -45,7 +45,7 @@ extension Stack {
 
     /// Swaps the focussed element with the primary element.
     public func swapPrimary() -> Self {
-        guard !self.up.isEmpty() else {
+        guard !self.up.isEmpty else {
             // Nothing to do, focussed element is already the primary element
             return self
         }

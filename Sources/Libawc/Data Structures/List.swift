@@ -58,17 +58,19 @@ extension List {
         .cons(head: left, tail: right)
     }
 
+    public var isEmpty: Bool {
+        get {
+            switch self {
+            case .empty: return true
+            default: return false
+            }
+        }
+    }
+
     public static func +++(left: List<T>, right: List<T>) -> List<T> {
         switch left {
         case .empty: return right
         case let .cons(x, xs): return x ++ xs +++ right
-        }
-    }
-
-    public func isEmpty() -> Bool {
-        switch self {
-        case .empty: return true
-        default: return false
         }
     }
 

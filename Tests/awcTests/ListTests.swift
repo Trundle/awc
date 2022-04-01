@@ -4,7 +4,7 @@ import Libawc
 
 public final class ListTests: XCTestCase {
     func testEmptyIsEmpty() {
-        XCTAssertTrue(List<Int>.empty.isEmpty())
+        XCTAssertTrue(List<Int>.empty.isEmpty)
     }
 
     func testFilterAllFiltered() {
@@ -12,7 +12,7 @@ public final class ListTests: XCTestCase {
 
         let filtered = list.filter { _ in false }
 
-        XCTAssertTrue(filtered.isEmpty())
+        XCTAssertTrue(filtered.isEmpty)
     }
 
     func testFilterNonFiltered() {
@@ -39,12 +39,4 @@ public final class ListTests: XCTestCase {
         XCTAssertFalse(list.contains(23))
         XCTAssertTrue(list.contains(42))
     }
-
-    public static var allTests = [
-        ("testEmptyIsEmpty", testEmptyIsEmpty),
-        ("testFilterAllFiltered", testFilterAllFiltered),
-        ("testFilterNonFiltered", testFilterNonFiltered),
-        ("testReverse", testReverse),
-        ("testContainsReturnsFalseForEmptyList", testContainsReturnsFalseForEmptyList),
-    ]
 }

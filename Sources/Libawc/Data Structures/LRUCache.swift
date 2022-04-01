@@ -22,6 +22,12 @@ private final class LinkedList<T> {
 
     private var sentinel: Node = Node()
 
+    var isEmpty: Bool {
+        get {
+            sentinel.next === sentinel
+        }
+    }
+
     init() {
     }
 
@@ -33,7 +39,7 @@ private final class LinkedList<T> {
     }
 
     func dropLast() -> T {
-        assert(!isEmpty())
+        assert(!isEmpty)
         let node = sentinel.prev!
         node.prev.next = node.next
         node.next.prev = node.prev
@@ -49,10 +55,6 @@ private final class LinkedList<T> {
         node.next = sentinel.next
         sentinel.next.prev = node
         sentinel.next = node
-    }
-
-    func isEmpty() -> Bool {
-        return sentinel.next === sentinel
     }
 }
 
