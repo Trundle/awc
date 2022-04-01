@@ -51,16 +51,24 @@ internal func renderSurface(
 }
 
 public func renderSurface<L: Layout>(
-    _ renderer: UnsafeMutablePointer<wlr_renderer>,
+    _ awc: Awc<L>,
     _ output: Output<L>,
     _ surface: Surface,
     _ attributes: Set<ViewAttribute>,
     _ box: wlr_box
 ) where L.View == Surface, L.OutputData == OutputDetails {
     let wlrOutput = output.data.output
+
+    var px = box.x
+    var py = box.y
+    if let geometry = awc.xdgGeometries[surface] {
+        px -= geometry.x
+        py -= geometry.y
+    }
+
     for (childSurface, sx, sy) in surface.surfaces() {
         renderSurface(
-            renderer: renderer, output: wlrOutput, px: box.x, py: box.y, surface: childSurface, sx: sx, sy: sy
+            renderer: awc.renderer, output: wlrOutput, px: px, py: py, surface: childSurface, sx: sx, sy: sy
         )
     }
 }

@@ -62,7 +62,8 @@ public class OutputDetails {
 
 
 public typealias RenderSurfaceHook<L: Layout> =
-    (UnsafeMutablePointer<wlr_renderer>, Output<L>, Surface, Set<ViewAttribute>, wlr_box) -> ()
+    (Awc<L>, Output<L>, Surface, Set<ViewAttribute>, wlr_box) -> ()
+    where L.OutputData == OutputDetails, L.View == Surface
 
 public typealias ViewAtHook<L: Layout> =
     (Awc<L>, Double, Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
@@ -108,6 +109,8 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
+    // The committed windoow geometries of surfaces
+    var xdgGeometries: [Surface: wlr_box] = [:]
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
     private var listeners: [ListenerKey: UnsafeMutableRawPointer] = [:]
     var extensionData: [ObjectIdentifier: Any] = [:]
@@ -213,8 +216,8 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
             let outputY = y - Double(outputLayoutBox.y)
             for (view, _, box) in output.arrangement.reversed() {
                 if box.contains(x: Int(outputX), y: Int(outputY)) {
-                    let surfaceX = outputX - Double(box.x)
-                    let surfaceY = outputY - Double(box.y)
+                    var surfaceX = outputX - Double(box.x)
+                    var surfaceY = outputY - Double(box.y)
                     var sx: Double = 0
                     var sy: Double = 0
 
@@ -223,6 +226,10 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
                     case .layer(let layerSurface):
                         surface = wlr_layer_surface_v1_surface_at(layerSurface, surfaceX, surfaceY, &sx, &sy)
                     case .xdg(let viewSurface):
+                        if let geometry = self.xdgGeometries[view] {
+                            surfaceX += Double(geometry.x)
+                            surfaceY += Double(geometry.y)
+                        }
                         surface = wlr_xdg_surface_surface_at(viewSurface, surfaceX, surfaceY, &sx, &sy)
                     case .xwayland:
                         surface = wlr_surface_surface_at(view.wlrSurface, surfaceX, surfaceY, &sx, &sy)
@@ -768,7 +775,7 @@ extension Awc: OutputDamage {
         color.withPtr { wlr_renderer_clear(self.renderer, $0) }
 
         for (parent, attributes, box) in output.arrangement {
-            self.renderSurfaceHook(self.renderer, output, parent, attributes, box)
+            self.renderSurfaceHook(self, output, parent, attributes, box)
         }
 
         // Render additional surfaces such as drag and drop icons

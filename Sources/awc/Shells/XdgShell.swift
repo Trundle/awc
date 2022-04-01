@@ -268,7 +268,9 @@ extension Awc: XdgSurface {
 
     internal func surfaceDestroyed(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
         self.removeListener(xdgSurface, XdgSurfaceListener.self)
-        self.unmapped.remove(Surface.xdg(surface: xdgSurface))
+        let surface = Surface.xdg(surface: xdgSurface)
+        self.unmapped.remove(surface)
+        self.xdgGeometries.removeValue(forKey: surface)
     }
 }
 
@@ -276,6 +278,10 @@ extension Awc: XdgMappedSurface {
     internal func commit(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
         let surface = Surface.xdg(surface: xdgSurface)
         self.damageWlrSurface(parent: surface, wlrSurface: surface.wlrSurface, sx: 0, sy: 0)
+
+        var box = wlr_box()
+        wlr_xdg_surface_get_geometry(xdgSurface, &box)
+        self.xdgGeometries[surface] = box
     }
 
     func newPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>) {

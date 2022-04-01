@@ -80,15 +80,15 @@ public func smartBorders<L: Layout>(
 ) -> RenderSurfaceHook<L>
     where L.OutputData == OutputDetails
 {
-    { renderer, output, surface, attributes, box in
+    { awc, output, surface, attributes, box in
         if attributes.isDisjoint(with: undecoratedAttributes) {
             let color = attributes.contains(.focused) ? activeBorderColor : inactiveBorderColor
             drawBorder(
-                renderer: renderer, output: output.data.output, box: box, width: Int32(borderWidth), color: color
+                renderer: awc.renderer, output: output.data.output, box: box, width: Int32(borderWidth), color: color
             )
         }
 
-        renderHook(renderer, output, surface, attributes, box)
+        renderHook(awc, output, surface, attributes, box)
     }
 }
 
