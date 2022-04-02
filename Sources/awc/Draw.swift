@@ -1,5 +1,7 @@
 import Wlroots
 
+import Libawc
+
 /// Draws a border with the given width around the given box. The border is drawn outside the box.
 func drawBorder(
     renderer: UnsafeMutablePointer<wlr_renderer>,

@@ -1,5 +1,7 @@
 import Wlroots
 
+import Libawc
+
 class Program {
     private let id: GLuint
     private var locations: [String: GLint] = [:]

@@ -6,6 +6,8 @@
 
 import Wlroots
 
+import Libawc
+
 // Wlroot signal handlers don't have an extra parameter for arbitrary consumer-controlled
 // data, but rather use a pattern that assumes that the signal handler is embedded in the
 // data that should be passed. As the handler that triggered the signal is passed to the
