@@ -100,8 +100,8 @@ extension Surface {
         get {
             switch self {
             case .layer: return ""
-            case .xdg(let surface): return String(cString: surface.pointee.toplevel.pointee.title)
-            case .xwayland(let surface): return String(cString: surface.pointee.title)
+            case .xdg(let surface): return surface.pointee.toplevel.pointee.title.toString()
+            case .xwayland(let surface): return surface.pointee.title.toString()
             }
         }
     }
@@ -158,5 +158,15 @@ extension Surface {
             )
         }
         return surfaces
+    }
+}
+
+fileprivate extension Optional where Wrapped == UnsafeMutablePointer<CChar> {
+    func toString() -> String {
+        if let ptr = self {
+            return String(cString: ptr)
+        } else {
+            return ""
+        }
     }
 }
