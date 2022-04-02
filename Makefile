@@ -87,6 +87,11 @@ clean:
 	cd Sources/awc_config && cargo clean
 	cd Sources/awcctl && cargo clean
 
+fmt:
+	dhall format Sources/awc_config/Dhall/Types.dhall
+	cd Sources/awc_config && cargo fmt
+	cd Sources/awcctl && cargo fmt
+
 validateShaders:
 	python Tools/validate_shaders.py
 
@@ -97,4 +102,4 @@ all: target/awc target/awcctl target/SpawnHelper
 
 
 .DEFAULT_GOAL=all
-.PHONY: awc clean test validate validateShaders
+.PHONY: awc clean fmt test validate validateShaders

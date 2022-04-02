@@ -81,8 +81,9 @@ impl Action {
             Action::SwitchVT(vt) => action.switch_vt = *vt,
             Action::NextLayout => action.next_layout = true,
             Action::SwapWorkspaces => action.swap_workspaces = true,
-            Action::SwapWorkspaceTagWith(ws) =>
-                action.swap_workspace_tag_with = str_to_c_char(&ws, "swap workspace tag")?,
+            Action::SwapWorkspaceTagWith(ws) => {
+                action.swap_workspace_tag_with = str_to_c_char(&ws, "swap workspace tag")?
+            }
             Action::View(ws) => action.view = str_to_c_char(&ws, "view target")?,
         }
         Ok(action)
@@ -388,7 +389,7 @@ pub struct AwcOutputHudColors {
 #[repr(C)]
 pub enum AwcDirection {
     Horizontal,
-    Vertical
+    Vertical,
 }
 
 /// cbindgen:prefix-with-name
@@ -400,7 +401,7 @@ pub enum AwcLayoutOp {
     TwoPane { split: f64, delta: f64 },
     Reflected(AwcDirection),
     Rotated,
-    Push
+    Push,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
