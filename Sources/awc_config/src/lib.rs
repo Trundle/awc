@@ -399,6 +399,7 @@ pub enum AwcLayoutOp {
     Choose,
     Full,
     TwoPane { split: f64, delta: f64 },
+    Magnify(f64),
     Reflected(AwcDirection),
     Rotated,
     Push,

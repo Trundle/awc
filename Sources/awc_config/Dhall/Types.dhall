@@ -67,6 +67,7 @@ let Layout
         : { choose : Layout → Layout → Layout
           , full : Layout
           , twoPane : Double → Double → Layout
+          , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
           }
@@ -82,6 +83,7 @@ let choose
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
           , twoPane : Double → Double → _Layout
+          , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
           }
@@ -105,6 +107,7 @@ let full
         : { choose : Layout → Layout → Layout
           , full : Layout
           , twoPane : Double → Double → Layout
+          , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
           }
@@ -120,11 +123,32 @@ let twoPane
         : { choose : Layout → Layout → Layout
           , full : Layout
           , twoPane : Double → Double → Layout
+          , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
           }
         ) →
         layout.twoPane split delta
+
+let magnify
+    : Double → Layout → Layout
+    = λ(magnification : Double) →
+      λ(wrapped : Layout) →
+      λ(_Layout : Type) →
+      λ ( layout
+        : { choose : _Layout → _Layout → _Layout
+          , full : _Layout
+          , twoPane : Double → Double → _Layout
+          , magnify : Double → _Layout → _Layout
+          , reflected : Direction → _Layout → _Layout
+          , rotated : _Layout → _Layout
+          }
+        ) →
+        let adapt
+            : Layout → _Layout
+            = λ(x : Layout) → x _Layout layout
+
+        in  layout.magnify magnification (adapt wrapped)
 
 let reflected
     : Direction → Layout → Layout
@@ -135,6 +159,7 @@ let reflected
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
           , twoPane : Double → Double → _Layout
+          , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
           }
@@ -153,6 +178,7 @@ let rotated
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
           , twoPane : Double → Double → _Layout
+          , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
           }
@@ -167,6 +193,7 @@ let LayoutOp =
       < Choose
       | Full
       | TwoPane : { split : Double, delta : Double }
+      | Magnify : Double
       | Reflected : Direction
       | Rotated
       >
@@ -185,6 +212,10 @@ let buildLayout
               λ(split : Double) →
               λ(delta : Double) →
                 [ LayoutOp.TwoPane { split, delta } ]
+          , magnify =
+              λ(magnification : Double) →
+              λ(wrapped : List LayoutOp) →
+                wrapped # [ LayoutOp.Magnify magnification ]
           , reflected =
               λ(direction : Direction) →
               λ(wrapped : List LayoutOp) →
@@ -257,6 +288,7 @@ in  { Action
     , buildLayout
     , choose
     , full
+    , magnify
     , reflected
     , rotated
     , twoPane

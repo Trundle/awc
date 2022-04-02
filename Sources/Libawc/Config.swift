@@ -5,6 +5,18 @@ public enum ConfigError: Error {
     case invalidLayout
 }
 
+private class MagnifiedMapper<View, OutputData>: AnyLayoutMapper {
+    private let magnification: Double
+
+    init(magnification: Double) {
+        self.magnification = magnification
+    }
+
+    func flatMap<L: Layout>(_ layout: L) -> AnyLayout<L.View, L.OutputData> {
+        AnyLayout.wrap(Magnified(layout: layout, magnification: self.magnification))
+    }
+}
+
 private class ReflectedMapper<View, OutputData>: AnyLayoutMapper {
     private let direction: AwcDirection
 
@@ -71,6 +83,11 @@ public func buildLayout<View, OutputData>(_ op: UnsafePointer<AwcLayoutOp>, _ nu
         case AwcLayoutOp_TwoPane:
             let twoPane = currentOp.pointee.two_pane
             layouts.append(AnyLayout.wrap(TwoPane(split: twoPane.split, delta: twoPane.delta)))
+        case AwcLayoutOp_Magnify:
+            guard let layout = layouts.popLast() else {
+                throw ConfigError.invalidLayout
+            }
+            layouts.append(layout.flatMap(MagnifiedMapper(magnification: currentOp.pointee.magnify)))
         case AwcLayoutOp_Reflected:
             guard let layout = layouts.popLast() else {
                 throw ConfigError.invalidLayout

@@ -5,18 +5,6 @@ import Wlroots
 
 import XCTest
 
-private struct EqWrapper: Equatable {
-    let view: TestView
-    let attributes: Set<ViewAttribute>
-    let box: wlr_box
-
-    public init(_ tuple: (TestView, Set<ViewAttribute>, wlr_box)) {
-        self.view = tuple.0
-        self.attributes = tuple.1
-        self.box = tuple.2
-    }
-}
-
 public class ReflectedTests: XCTestCase {
     func testReflectsHorizontally() {
         let view = TestView()
@@ -25,7 +13,7 @@ public class ReflectedTests: XCTestCase {
         ]
         let expected = [
             (view, Set(), wlr_box(x: 100, y: 0, width: 100, height: 100))
-        ].map { EqWrapper($0) }
+        ].map { ArrangementEqWrapper($0) }
         self.testLayoutWithSingleView(
             layout: Reflected(layout: TestLayout(arrangementToReturn: arrangement), direction: Horizontal),
             expectedResult: expected)
@@ -38,7 +26,7 @@ public class ReflectedTests: XCTestCase {
         ]
         let expected = [
             (view, Set(), wlr_box(x: 0, y: 50, width: 200, height: 50))
-        ].map { EqWrapper($0) }
+        ].map { ArrangementEqWrapper($0) }
         self.testLayoutWithSingleView(
             layout: Reflected(layout: TestLayout(arrangementToReturn: arrangement), direction: Vertical),
             expectedResult: expected)
@@ -46,7 +34,7 @@ public class ReflectedTests: XCTestCase {
 
     private func testLayoutWithSingleView(
         layout: Reflected<TestLayout>,
-        expectedResult: [EqWrapper]
+        expectedResult: [ArrangementEqWrapper]
     ) {
         let view = TestView()
         let stack = Stack.singleton(view)
@@ -56,6 +44,6 @@ public class ReflectedTests: XCTestCase {
 
         let result = layout.doLayout(dataProvider: NoDataProvider(), output: output, stack: stack, box: box)
 
-        XCTAssertEqual(expectedResult, result.map { EqWrapper($0) })
+        XCTAssertEqual(expectedResult, result.map { ArrangementEqWrapper($0) })
     }
 }

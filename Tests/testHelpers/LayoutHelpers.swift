@@ -109,3 +109,16 @@ public final class TestLayout: Layout {
         return self
     }
 }
+
+// As tuples cannot conform to protocols, this is a convenience struct to compare arrangements
+public struct ArrangementEqWrapper: Equatable {
+    let view: TestView
+    let attributes: Set<ViewAttribute>
+    let box: wlr_box
+
+    public init(_ tuple: (TestView, Set<ViewAttribute>, wlr_box)) {
+        self.view = tuple.0
+        self.attributes = tuple.1
+        self.box = tuple.2
+    }
+}

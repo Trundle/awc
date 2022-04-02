@@ -97,6 +97,7 @@ validateShaders:
 
 validate: validateShaders
 	nixpkgs-fmt --check flake.nix
+	dhall type < Sources/awc_config/Dhall/Types.dhall
 
 all: target/awc target/awcctl target/SpawnHelper
 
