@@ -66,8 +66,11 @@ private class ChooseLayoutInnerMapper<Left: Layout>: AnyLayoutMapper {
     }
 }
 
-public func buildLayout<View, OutputData>(_ op: UnsafePointer<AwcLayoutOp>, _ numberOfOps: Int) throws
--> AnyLayout<View, OutputData> {
+public func buildLayout<View: Equatable, OutputData>(
+    _ op: UnsafePointer<AwcLayoutOp>,
+    _ numberOfOps: Int
+) throws -> AnyLayout<View, OutputData>
+{
     var opsLeft = numberOfOps
     var currentOp = op
     var layouts: [AnyLayout<View, OutputData>] = []
@@ -98,6 +101,9 @@ public func buildLayout<View, OutputData>(_ op: UnsafePointer<AwcLayoutOp>, _ nu
                 throw ConfigError.invalidLayout
             }
             layouts.append(layout.flatMap(RotatedMapper()))
+        case AwcLayoutOp_Tiled:
+            let tiled = currentOp.pointee.tiled
+            layouts.append(AnyLayout.wrap(Tiled(split: tiled.split, delta: tiled.delta)))
         default:
             throw ConfigError.invalidLayout
         }

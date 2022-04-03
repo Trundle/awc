@@ -78,6 +78,16 @@ Uses all available space to show the focused view.
 .. image:: https://trundle.github.io/awc/full.png
 
 
+Tiled
+-----
+
+Splits the available space vertically by a configurable ratio. Shows the main
+view (first view in stack) on the left. All remaining views are tiled
+horizontally on the right.
+
+.. image:: https://trundle.github.io/awc/tiled.png
+
+
 TwoPane
 -------
 

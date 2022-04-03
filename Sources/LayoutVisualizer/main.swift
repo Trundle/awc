@@ -36,6 +36,12 @@ class View {
     }
 }
 
+extension View: Equatable {
+    static func ==(lhs: View, rhs: View) -> Bool {
+        lhs === rhs
+    }
+}
+
 
 private func createStack() -> Stack<View> {
     let focus = View(number: 1, color: (1, 1, 1))
@@ -96,12 +102,14 @@ private func render<L: Layout>(layout: L, to filename: String) where L.View == V
 
 func main() {
     let full = Full<View, ()>()
+    let tiled = Tiled<View, ()>(split: 0.5, delta: 0.1)
     let twoPane = TwoPane<View, ()>(split: 0.5, delta: 0.1)
     let rotatedTwoPane = Rotated(layout: twoPane)
     let reflectedTwoPane = Reflected(layout: twoPane, direction: Horizontal)
     let reflectedRotatedTwoPane = Reflected(layout: rotatedTwoPane, direction: Vertical)
 
     render(layout: full, to: "full.png")
+    render(layout: tiled, to: "tiled.png")
     render(layout: twoPane, to: "two_pane.png")
     render(layout: rotatedTwoPane, to: "rotated_two_pane.png")
     render(layout: reflectedTwoPane, to: "reflected_two_pane.png")

@@ -70,6 +70,7 @@ let Layout
           , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
+          , tiled : Double → Double → Layout
           }
         ) →
         Layout
@@ -86,6 +87,7 @@ let choose
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
+          , tiled : Double → Double → _Layout
           }
         ) →
         let adapt = λ(x : Layout) → x _Layout layout
@@ -110,9 +112,27 @@ let full
           , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
+          , tiled : Double → Double → Layout
           }
         ) →
         layout.full
+
+let tiled
+    : Double → Double → Layout
+    = λ(split : Double) →
+      λ(delta : Double) →
+      λ(Layout : Type) →
+      λ ( layout
+        : { choose : Layout → Layout → Layout
+          , full : Layout
+          , twoPane : Double → Double → Layout
+          , magnify : Double → Layout → Layout
+          , reflected : Direction → Layout → Layout
+          , rotated : Layout → Layout
+          , tiled : Double → Double → Layout
+          }
+        ) →
+        layout.tiled split delta
 
 let twoPane
     : Double → Double → Layout
@@ -126,6 +146,7 @@ let twoPane
           , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
           , rotated : Layout → Layout
+          , tiled : Double → Double → Layout
           }
         ) →
         layout.twoPane split delta
@@ -142,6 +163,7 @@ let magnify
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
+          , tiled : Double → Double → _Layout
           }
         ) →
         let adapt
@@ -162,6 +184,7 @@ let reflected
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
+          , tiled : Double → Double → _Layout
           }
         ) →
         let adapt
@@ -181,6 +204,7 @@ let rotated
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
           , rotated : _Layout → _Layout
+          , tiled : Double → Double → _Layout
           }
         ) →
         let adapt
@@ -196,6 +220,7 @@ let LayoutOp =
       | Magnify : Double
       | Reflected : Direction
       | Rotated
+      | Tiled : { split : Double, delta : Double }
       >
 
 let buildLayout
@@ -222,6 +247,10 @@ let buildLayout
                 wrapped # [ LayoutOp.Reflected direction ]
           , rotated =
               λ(wrapped : List LayoutOp) → wrapped # [ LayoutOp.Rotated ]
+          , tiled =
+              λ(split : Double) →
+              λ(delta : Double) →
+                [ LayoutOp.Tiled { split, delta } ]
           }
 
 let Config =
@@ -291,5 +320,6 @@ in  { Action
     , magnify
     , reflected
     , rotated
+    , tiled
     , twoPane
     }

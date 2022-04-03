@@ -403,6 +403,7 @@ pub enum AwcLayoutOp {
     Reflected(AwcDirection),
     Rotated,
     Push,
+    Tiled { split: f64, delta: f64 },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
