@@ -5,6 +5,18 @@ public enum ConfigError: Error {
     case invalidLayout
 }
 
+private class CappedMapper<View, OutputData>: AnyLayoutMapper {
+    private let limit: Int
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func flatMap<L: Layout>(_ layout: L) -> AnyLayout<L.View, L.OutputData> {
+        AnyLayout.wrap(Capped(layout: layout, limit: self.limit))
+    }
+}
+
 private class MagnifiedMapper<View, OutputData>: AnyLayoutMapper {
     private let magnification: Double
 
@@ -86,6 +98,11 @@ public func buildLayout<View: Equatable, OutputData>(
         case AwcLayoutOp_TwoPane:
             let twoPane = currentOp.pointee.two_pane
             layouts.append(AnyLayout.wrap(TwoPane(split: twoPane.split, delta: twoPane.delta)))
+        case AwcLayoutOp_Capped:
+            guard let layout = layouts.popLast() else {
+                throw ConfigError.invalidLayout
+            }
+            layouts.append(layout.flatMap(CappedMapper(limit: currentOp.pointee.capped)))
         case AwcLayoutOp_Magnify:
             guard let layout = layouts.popLast() else {
                 throw ConfigError.invalidLayout

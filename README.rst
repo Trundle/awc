@@ -99,6 +99,12 @@ on the right.
 .. image:: https://trundle.github.io/awc/two_pane.png
 
 
+Capped
+------
+
+Wraps another layout and limits the number of views to a configured amount.
+
+
 Rotated
 -------
 

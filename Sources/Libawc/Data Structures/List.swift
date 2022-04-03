@@ -93,7 +93,11 @@ extension List {
 
 extension List {
     public init<C: Collection>(collection: C) where C.Element == T {
-        self = collection.reversed().reduce(List.empty, { result, next in
+        self.init(sequence: collection)
+    }
+
+    public init<S: Sequence>(sequence: S) where S.Element == T {
+        self = sequence.reversed().reduce(List.empty, { result, next in
             next ++ result
         })
     }
