@@ -73,7 +73,7 @@ extension ViewSet: Arbitrary where L == TestLayout {
                 if views.isEmpty {
                     stack = nil
                 } else {
-                    stack = Stack(up: List(collection: views.dropLast()), focus: views.last!, down: List.empty)
+                    stack = Stack(up: List(sequence: views.dropLast()), focus: views.last!, down: List.empty)
                 }
                 return Workspace(tag: String(i), layout: layout, stack: stack)
             }

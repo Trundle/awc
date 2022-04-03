@@ -16,7 +16,7 @@ let font = "PragmataPro Mono Liga"
 
 private extension Array {
     func toList() -> List<Element> {
-        List(collection: self)
+        List(sequence: self)
     }
 }
 

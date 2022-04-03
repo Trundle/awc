@@ -12,7 +12,7 @@ public final class MagnifiedTests: XCTestCase {
     private let secondView = TestView(id: 1)
 
     func testDoesNotMagnifyMainView() {
-        let stack = Stack(up: List.empty, focus: mainView, down: List(collection: [secondView]))
+        let stack = Stack(up: List.empty, focus: mainView, down: List(sequence: [secondView]))
         let arrangement: Arrangement = [
             (mainView, [.focused], wlr_box(x: 0, y: 0, width: 100, height: 50)),
             (secondView, [], wlr_box(x: 100, y: 0, width: 100, height: 50))
@@ -87,7 +87,7 @@ public final class MagnifiedTests: XCTestCase {
         expected: Arrangement,
         box: wlr_box
     ) {
-        let stack = Stack(up: List(collection: [mainView]), focus: secondView, down: List.empty)
+        let stack = Stack(up: List(sequence: [mainView]), focus: secondView, down: List.empty)
         let layout = createLayout(arrangement)
 
         let result = layout.doLayout(

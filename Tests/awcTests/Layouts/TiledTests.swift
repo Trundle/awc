@@ -40,7 +40,7 @@ public final class TiledTests: XCTestCase {
 
     func testMultipleViews() {
         property("boxes don't overlap") <- forAll { (box: wlr_box, n: UInt) in
-            let up = List(collection: (0..<n).map { TestView(id: Int($0)) })
+            let up = List(sequence: (0..<n).map { TestView(id: Int($0)) })
             let stack = Stack(up: up, focus: TestView(id: Int(n + 1)), down: List.empty)
             let workspace = Workspace(tag: "test", layout: self.layout, stack: stack)
 

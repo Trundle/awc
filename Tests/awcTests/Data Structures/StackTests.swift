@@ -14,7 +14,7 @@ extension List: Arbitrary where T == Int {
     public static var arbitrary: Gen<List<Int>> {
         Gen<List<Int>>.compose { 
             let array: [Int] = $0.generate()
-            return List(collection: array)
+            return List(sequence: array)
         }
     }
 }
@@ -37,7 +37,7 @@ extension Stack: Arbitrary where T == Int {
 
 class StackTests: XCTestCase {
     func testToArrayReturnsRightOrder() {
-        let stack = Stack(up: List(collection: [3, 2, 1]), focus: 4, down: List(collection: [5, 6, 7]))
+        let stack = Stack(up: List(sequence: [3, 2, 1]), focus: 4, down: List(sequence: [5, 6, 7]))
 
         XCTAssertEqual([1, 2, 3, 4, 5, 6, 7], stack.toArray())
     }
@@ -47,14 +47,14 @@ class StackTests: XCTestCase {
 
         XCTAssertEqual(
             [1, 2, 3, 4],
-            Stack(up: List(collection: [2, 1]), focus: 4, down: List.empty).insert(3).toArray())
+            Stack(up: List(sequence: [2, 1]), focus: 4, down: List.empty).insert(3).toArray())
 
         XCTAssertEqual(
             [1, 2, 3, 4, 5],
             Stack(
-                up: List(collection: [2, 1]),
+                up: List(sequence: [2, 1]),
                 focus: 4,
-                down: List(collection: [5])
+                down: List(sequence: [5])
             ).insert(3).toArray())
     }
 

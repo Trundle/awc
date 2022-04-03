@@ -8,7 +8,7 @@ public final class ListTests: XCTestCase {
     }
 
     func testFilterAllFiltered() {
-        let list = List(collection: 1...10)
+        let list = List(sequence: 1...10)
 
         let filtered = list.filter { _ in false }
 
@@ -16,7 +16,7 @@ public final class ListTests: XCTestCase {
     }
 
     func testFilterNonFiltered() {
-        let list = List(collection: 1...10)
+        let list = List(sequence: 1...10)
 
         let filtered = list.filter { _ in true }
 
@@ -24,8 +24,8 @@ public final class ListTests: XCTestCase {
     }
 
     func testReverse() {
-        let list = List(collection: 1...10)
-        XCTAssertEqual(list.reverse(), List(collection: (1...10).reversed()))
+        let list = List(sequence: 1...10)
+        XCTAssertEqual(list.reverse(), List(sequence: (1...10).reversed()))
         XCTAssertEqual(list.reverse().reverse(), list)
     }
 
@@ -34,7 +34,7 @@ public final class ListTests: XCTestCase {
     }
 
     func testContainsSingleton() {
-        let list = List(collection: [42])
+        let list = List(sequence: [42])
 
         XCTAssertFalse(list.contains(23))
         XCTAssertTrue(list.contains(42))
