@@ -105,6 +105,18 @@ Capped
 Wraps another layout and limits the number of views to a configured amount.
 
 
+Magnified
+---------
+
+Wraps another layout and scales the focused view by a configured factor if it's
+not the main view.
+
+.. image:: https://trundle.github.io/awc/magnified_tiled_1.png
+
+.. image:: https://trundle.github.io/awc/magnified_tiled_2.png
+
+
+
 Rotated
 -------
 

@@ -53,11 +53,11 @@ private func createStack() -> Stack<View> {
 }
 
 
-private func render<L: Layout>(layout: L, cairo: OpaquePointer) where L.View == View, L.OutputData == () {
+private func render<L: Layout>(layout: L, stack: Stack<View>, cairo: OpaquePointer)
+where L.View == View, L.OutputData == () {
     let workspace = Workspace(tag: "visualizer", layout: layout)
     let output = Output(data: (), workspace: workspace)
     let box = wlr_box(x: 0, y: 0, width: width, height: height)
-    let stack = createStack()
     let arrangement = layout.doLayout(dataProvider: NoDataProvider(), output: output, stack: stack, box: box)
 
     for (view, _, box) in arrangement {
@@ -85,7 +85,8 @@ private func drawBorder(cairo: OpaquePointer) {
     cairo_stroke(cairo)
 }
 
-private func render<L: Layout>(layout: L, to filename: String) where L.View == View, L.OutputData == () {
+private func render<L: Layout>(layout: L, to filename: String, stack: Stack<View> = createStack())
+where L.View == View, L.OutputData == () {
     guard let surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height),
         let cairo = cairo_create(surface) else {
         print("[FATAL] Could not create cairo surface or context")
@@ -95,7 +96,7 @@ private func render<L: Layout>(layout: L, to filename: String) where L.View == V
         cairo_surface_destroy(surface)
         cairo_destroy(cairo)
     }
-    render(layout: layout, cairo: cairo)
+    render(layout: layout, stack: stack, cairo: cairo)
     drawBorder(cairo: cairo)
     cairo_surface_write_to_png(surface, filename)
 }
@@ -110,6 +111,12 @@ func main() {
 
     render(layout: full, to: "full.png")
     render(layout: tiled, to: "tiled.png")
+    render(
+        layout: Magnified(layout: tiled, magnification: 1.5), to: "magnified_tiled_1.png",
+        stack: createStack().focusDown())
+    render(
+        layout: Magnified(layout: tiled, magnification: 1.5), to: "magnified_tiled_2.png",
+        stack: createStack().focusDown().focusDown())
     render(layout: twoPane, to: "two_pane.png")
     render(layout: rotatedTwoPane, to: "rotated_two_pane.png")
     render(layout: reflectedTwoPane, to: "reflected_two_pane.png")
