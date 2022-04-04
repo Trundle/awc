@@ -247,7 +247,7 @@ let LayoutOp =
       < Choose
       | Full
       | TwoPane : { split : Double, delta : Double }
-      | LimitViews : Natural
+      | Capped : Natural
       | Magnify : Double
       | Reflected : Direction
       | Rotated
@@ -271,7 +271,7 @@ let buildLayout
           , capped =
               λ(limit : Natural) →
               λ(wrapped : List LayoutOp) →
-                wrapped # [ LayoutOp.LimitViews limit ]
+                wrapped # [ LayoutOp.Capped limit ]
           , magnify =
               λ(magnification : Double) →
               λ(wrapped : List LayoutOp) →

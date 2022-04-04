@@ -33,4 +33,13 @@ public final class ConfigTests: XCTestCase {
             XCTAssertTrue(wrapped! is Magnified<TwoPane<TestView, ()>>)
         }
     }
+
+    func testBuildCappedLayout() {
+        withConfig(Bundle.module, "capped") {
+            let layout: AnyLayout<TestView, ()> = try! buildLayout($0.layout, $0.number_of_layout_ops)
+
+            let wrapped = Mirror(reflecting: layout).descendant("wrapped")
+            XCTAssertTrue(wrapped! is Capped<Tiled<TestView, ()>>)
+        }
+    }
 }
