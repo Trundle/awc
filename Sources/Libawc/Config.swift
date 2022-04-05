@@ -95,9 +95,6 @@ public func buildLayout<View: Equatable, OutputData>(
             layouts.append(left.flatMap(ChooseLayoutMapper(right: right)))
         case AwcLayoutOp_Full:
             layouts.append(AnyLayout.wrap(Full()))
-        case AwcLayoutOp_TwoPane:
-            let twoPane = currentOp.pointee.two_pane
-            layouts.append(AnyLayout.wrap(TwoPane(split: twoPane.split, delta: twoPane.delta)))
         case AwcLayoutOp_Capped:
             guard let layout = layouts.popLast() else {
                 throw ConfigError.invalidLayout

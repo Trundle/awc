@@ -66,7 +66,6 @@ let Layout
       ∀ ( layout
         : { choose : Layout → Layout → Layout
           , full : Layout
-          , twoPane : Double → Double → Layout
           , capped : Natural → Layout → Layout
           , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
@@ -84,7 +83,6 @@ let choose
       λ ( layout
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
-          , twoPane : Double → Double → _Layout
           , capped : Natural → _Layout → _Layout
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
@@ -110,7 +108,6 @@ let full
       λ ( layout
         : { choose : Layout → Layout → Layout
           , full : Layout
-          , twoPane : Double → Double → Layout
           , capped : Natural → Layout → Layout
           , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
@@ -128,7 +125,6 @@ let tiled
       λ ( layout
         : { choose : Layout → Layout → Layout
           , full : Layout
-          , twoPane : Double → Double → Layout
           , capped : Natural → Layout → Layout
           , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
@@ -146,7 +142,6 @@ let twoPane
       λ ( layout
         : { choose : Layout → Layout → Layout
           , full : Layout
-          , twoPane : Double → Double → Layout
           , capped : Natural → Layout → Layout
           , magnify : Double → Layout → Layout
           , reflected : Direction → Layout → Layout
@@ -154,7 +149,7 @@ let twoPane
           , tiled : Double → Double → Layout
           }
         ) →
-        layout.twoPane split delta
+        layout.capped 2 (layout.tiled split delta)
 
 let capped
     : Natural → Layout → Layout
@@ -164,7 +159,6 @@ let capped
       λ ( layout
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
-          , twoPane : Double → Double → _Layout
           , capped : Natural → _Layout → _Layout
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
@@ -186,7 +180,6 @@ let magnify
       λ ( layout
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
-          , twoPane : Double → Double → _Layout
           , capped : Natural → _Layout → _Layout
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
@@ -208,7 +201,6 @@ let reflected
       λ ( layout
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
-          , twoPane : Double → Double → _Layout
           , capped : Natural → _Layout → _Layout
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
@@ -229,7 +221,6 @@ let rotated
       λ ( layout
         : { choose : _Layout → _Layout → _Layout
           , full : _Layout
-          , twoPane : Double → Double → _Layout
           , capped : Natural → _Layout → _Layout
           , magnify : Double → _Layout → _Layout
           , reflected : Direction → _Layout → _Layout
@@ -246,7 +237,6 @@ let rotated
 let LayoutOp =
       < Choose
       | Full
-      | TwoPane : { split : Double, delta : Double }
       | Capped : Natural
       | Magnify : Double
       | Reflected : Direction
@@ -264,10 +254,6 @@ let buildLayout
               λ(b : List LayoutOp) →
                 a # b # [ LayoutOp.Choose ]
           , full = [ LayoutOp.Full ]
-          , twoPane =
-              λ(split : Double) →
-              λ(delta : Double) →
-                [ LayoutOp.TwoPane { split, delta } ]
           , capped =
               λ(limit : Natural) →
               λ(wrapped : List LayoutOp) →

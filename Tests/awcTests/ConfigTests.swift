@@ -30,7 +30,7 @@ public final class ConfigTests: XCTestCase {
             let layout: AnyLayout<TestView, ()> = try! buildLayout($0.layout, $0.number_of_layout_ops)
 
             let wrapped = Mirror(reflecting: layout).descendant("wrapped")
-            XCTAssertTrue(wrapped! is Magnified<TwoPane<TestView, ()>>)
+            XCTAssertTrue(wrapped! is Magnified<Capped<Tiled<TestView, ()>>>)
         }
     }
 

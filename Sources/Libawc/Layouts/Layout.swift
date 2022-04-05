@@ -87,45 +87,6 @@ public class Full<View, OutputData> : Layout {
     }
 }
 
-/// A layout that splits the screen horizontally and shows two windows. The left window is always
-/// the main window, and the right is either the currently focused window or the second window in
-/// layout order.
-public final class TwoPane<View, OutputData>: Layout {
-    public let description: String = "TwoPane"
-
-    private let split: Double
-    private let delta: Double
-
-    public init(split: Double, delta: Double) {
-        self.split = split
-        self.delta = delta
-    }
-
-    public func doLayout<L: Layout>(
-        dataProvider: ExtensionDataProvider,
-        output: Output<L>,
-        stack: Stack<View>,
-        box: wlr_box
-    ) -> [(View, Set<ViewAttribute>, wlr_box)] where L.View == View {
-        let (left, right) = splitHorizontally(by: self.split, box: box)
-        switch stack.up.reverse() {
-        case .cons(let main, _): return [(main, [], left), (stack.focus, [.focused], right)]
-        case .empty:
-            switch stack.down {
-            case .cons(let next, _): return [(next, [], right), (stack.focus, [.focused], left)]
-            case .empty: return [(stack.focus, [.focused], box)]
-            }
-        }
-    }
-
-    public func expand() -> TwoPane<View, OutputData> {
-        TwoPane(split: min(1, self.split + self.delta), delta: self.delta)
-    }
-
-    public func shrink() -> TwoPane<View, OutputData> {
-        TwoPane(split: max(0, self.split - self.delta), delta: self.delta)
-    }
-}
 
 public final class Choose<Left: Layout, Right: Layout>: Layout
     where Left.View == Right.View, Left.OutputData == Right.OutputData

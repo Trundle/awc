@@ -104,7 +104,7 @@ where L.View == View, L.OutputData == () {
 func main() {
     let full = Full<View, ()>()
     let tiled = Tiled<View, ()>(split: 0.5, delta: 0.1)
-    let twoPane = TwoPane<View, ()>(split: 0.5, delta: 0.1)
+    let twoPane = Capped(layout: Tiled<View, ()>(split: 0.5, delta: 0.1), limit: 2)
     let rotatedTwoPane = Rotated(layout: twoPane)
     let reflectedTwoPane = Reflected(layout: twoPane, direction: Horizontal)
     let reflectedRotatedTwoPane = Reflected(layout: rotatedTwoPane, direction: Vertical)
