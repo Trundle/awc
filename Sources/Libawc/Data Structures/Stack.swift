@@ -43,6 +43,19 @@ extension Stack {
         }
     }
 
+
+    /// Moves the focus to the nth element. No wrapping happens, if n is greater
+    /// than the number of elements, the stack is returned unchanged.
+    public func focus(nth: Int) -> Self {
+        let elements = self.toArray()
+        guard nth >= 0 && nth < elements.count else {
+            return self
+        }
+
+        let up = elements[..<nth].reduce(List<T>.empty, { $1 ++ $0 })
+        return Stack(up: up, focus: elements[nth], down: List(sequence: elements[(nth + 1)...]))
+    }
+
     /// Swaps the focussed element with the primary element.
     public func swapPrimary() -> Self {
         guard !self.up.isEmpty else {

@@ -84,6 +84,30 @@ class StackTests: XCTestCase {
         }
     }
 
+    func testFocus() {
+        property("focusing first element results in empty up stack and has the same elements")
+        <- forAll { (stack: Stack<Int>) in
+            let newStack = stack.focus(nth: 0)
+            return newStack.up.isEmpty && newStack.toArray() == stack.toArray()
+        }
+
+        property("focusing last element results in empty down stack and has the same elements")
+        <- forAll { (stack: Stack<Int>) in
+            let newStack = stack.focus(nth: stack.count - 1)
+            return newStack.down.isEmpty && newStack.toArray() == stack.toArray()
+        }
+
+        property("focusing past number of elements returns unchanged stack") <- forAll {
+            (stack: Stack<Int>, toAdd: UInt8) in
+            stack.focus(nth: stack.count + Int(toAdd)) == stack
+        }
+
+        property("focusing element < 0 returns unchanged stack") <- forAll {
+            (stack: Stack<Int>, n: UInt8) in
+            stack.focus(nth: -Int(1 &+ n)) == stack
+        }
+    }
+
     func testFocusDown() {
         property("focusDown() wraps around") <- forAll { (stack: Stack<Int>) in
             var newStack = stack

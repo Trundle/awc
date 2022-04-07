@@ -24,6 +24,8 @@ public enum Action {
     case focusUp
     /// Focus primary window
     case focusPrimary
+    /// Focus the nth surface
+    case focus(nth: Int)
     /// Focus output n
     case focusOutput(n: UInt8)
     /// Bring the workspace with the given tag to the current output
@@ -292,7 +294,8 @@ private func assertExactlyOneAction(_ action: AwcAction) {
         ].reduce(false, { assert(!$0 || !$1); return $0 || $1 })
 
     let numArgAction =
-        [ action.focus_output
+        [ action.focus
+        , action.focus_output
         , action.move_to_output
         , action.switch_vt
         ].reduce(UInt8(0), { assert($0 == 0 || $1 == 0); return $0 + $1 })
@@ -335,6 +338,8 @@ private func toAction(_ action: AwcAction) -> Action {
         return .focusUp
     } else if action.focus_primary {
         return .focusPrimary
+    } else if action.focus != 0 {
+        return .focus(nth: Int(action.focus))
     } else if action.focus_output != 0 {
         return .focusOutput(n: action.focus_output)
     } else if let tag = action.greedy_view {

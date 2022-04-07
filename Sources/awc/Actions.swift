@@ -88,6 +88,10 @@ extension Awc {
         case .expand: self.modifyAndUpdate { $0.replace(layout: $0.current.workspace.layout.expand()) }
         case .close: self.kill()
         case .configReload: self.reloadConfig()
+        case .focus(let nth): self.modifyAndUpdate { $0.modify { 
+            // N.B. nth is 1-indexed
+            $0.focus(nth: nth - 1)
+        } }
         case .focusDown: self.modifyAndUpdate { $0.modify { $0.focusDown() } }
         case .focusUp: self.modifyAndUpdate { $0.modify { $0.focusUp() } }
         case .focusPrimary: self.modifyAndUpdate { $0.focusMain() }

@@ -7,6 +7,7 @@ let Action =
       | Expand
       | Close
       | ConfigReload
+      | Focus : Natural
       | FocusDown
       | FocusUp
       | FocusPrimary
