@@ -65,15 +65,15 @@ impl Action {
         match self {
             Action::Close => action.close = true,
             Action::ConfigReload => action.config_reload = true,
-            Action::Execute(cmd) => action.execute = str_to_c_char(&cmd, "execute command")?,
+            Action::Execute(cmd) => action.execute = str_to_c_char(cmd, "execute command")?,
             Action::Expand => action.expand = true,
             Action::Focus(nth) => action.focus = *nth,
             Action::FocusDown => action.focus_down = true,
             Action::FocusUp => action.focus_up = true,
             Action::FocusOutput(output) => action.focus_output = *output,
             Action::FocusPrimary => action.focus_primary = true,
-            Action::GreedyView(ws) => action.greedy_view = str_to_c_char(&ws, "greedyView target")?,
-            Action::MoveTo(ws) => action.move_to = str_to_c_char(&ws, "move target")?,
+            Action::GreedyView(ws) => action.greedy_view = str_to_c_char(ws, "greedyView target")?,
+            Action::MoveTo(ws) => action.move_to = str_to_c_char(ws, "move target")?,
             Action::MoveToOutput(output) => action.move_to_output = *output,
             Action::ResetLayouts => action.reset_layouts = true,
             Action::Shrink => action.shrink = true,
@@ -85,9 +85,9 @@ impl Action {
             Action::NextLayout => action.next_layout = true,
             Action::SwapWorkspaces => action.swap_workspaces = true,
             Action::SwapWorkspaceTagWith(ws) => {
-                action.swap_workspace_tag_with = str_to_c_char(&ws, "swap workspace tag")?
+                action.swap_workspace_tag_with = str_to_c_char(ws, "swap workspace tag")?
             }
-            Action::View(ws) => action.view = str_to_c_char(&ws, "view target")?,
+            Action::View(ws) => action.view = str_to_c_char(ws, "view target")?,
         }
         Ok(action)
     }
@@ -134,7 +134,7 @@ impl KeyBinding {
         let (mods, number_of_mods) = vec_into_raw(self.mods.clone());
         let (code, sym) = match &self.key {
             Key::Code(code) => (*code, std::ptr::null()),
-            Key::Sym(sym) => (0, str_to_c_char(&sym, "Key symbol")?),
+            Key::Sym(sym) => (0, str_to_c_char(sym, "Key symbol")?),
         };
         Ok(AwcKeyBinding {
             action: self.action.to_awc()?,
@@ -243,7 +243,7 @@ impl Config {
         let converted_workspaces = self
             .workspaces
             .iter()
-            .map(|w| str_to_c_char(&w, "workspace"))
+            .map(|w| str_to_c_char(w, "workspace"))
             .collect::<Result<Vec<*const c_char>, String>>()?;
         let (workspaces, number_of_workspaces) = vec_into_raw(converted_workspaces);
         (*target).workspaces = workspaces;
@@ -485,7 +485,7 @@ pub unsafe extern "C" fn awc_config_load(
     path: *const c_char,
     result: *mut AwcConfig,
 ) -> *const c_char {
-    let path_str = if path != std::ptr::null() {
+    let path_str = if !path.is_null() {
         CStr::from_ptr(path).to_string_lossy().into_owned()
     } else {
         let config_path = xdg::BaseDirectories::with_prefix("awc")

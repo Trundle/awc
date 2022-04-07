@@ -92,10 +92,14 @@ fmt:
 	cd Sources/awc_config && cargo fmt
 	cd Sources/awcctl && cargo fmt
 
+clippy:
+	cd Sources/awc_config && cargo clippy
+	cd Sources/awcctl && cargo clippy
+
 validateShaders:
 	python Tools/validate_shaders.py
 
-validate: validateShaders
+validate: validateShaders clippy
 	nixpkgs-fmt --check flake.nix
 	dhall type < Sources/awc_config/Dhall/Types.dhall
 
@@ -103,4 +107,4 @@ all: target/awc target/awcctl target/SpawnHelper
 
 
 .DEFAULT_GOAL=all
-.PHONY: awc clean fmt test validate validateShaders
+.PHONY: awc clean clippy fmt test validate validateShaders
