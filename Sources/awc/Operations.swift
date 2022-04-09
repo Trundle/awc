@@ -89,16 +89,9 @@ extension Awc {
 
     func updateLayout() {
         for output in self.viewSet.outputs() {
-            // XXX encapsulate?
-            let borderWidth = Int32(self.config.borderWidth)
-            var outputLayoutBox = output.data.box
-            outputLayoutBox.x += borderWidth
-            outputLayoutBox.y += borderWidth
-            outputLayoutBox.width -= 2 * borderWidth
-            outputLayoutBox.height -= 2 * borderWidth
-            let outputBox = wlr_box(
-                x: borderWidth, y: borderWidth, width: outputLayoutBox.width, height: outputLayoutBox.height
-            )
+            let outputLayoutBox = output.data.box
+            let outputBox =
+                wlr_box(x: 0, y: 0, width: outputLayoutBox.width, height: outputLayoutBox.height)
 
             if let stack = output.workspace.stack?.filter({ !self.viewSet.floating.contains(key: $0) }) {
                 let arrangement = output.workspace.layout
