@@ -627,7 +627,18 @@ private struct LayerSurfaceListener: PListener {
     }
 }
 
+fileprivate extension wlr_box {
+    func contains(box: wlr_box) -> Bool {
+        let x2 = self.x + self.width
+        let y2 = self.y + self.height
+        return self.x <= box.x && self.y <= box.y
+            && box.x + box.width <= x2 && box.y + box.height <= y2
+    }
+}
+
 /// Layout that wraps around another layout and adds all layout shell surfaces.
+/// This layout should be before any other layout that modifies boxes, otherwise
+/// layer surfaces might be positioned at the wrong place.
 final class LayerLayout<WrappedLayout: Layout>: Layout
     where WrappedLayout.View == Surface, WrappedLayout.OutputData == OutputDetails
 {
@@ -666,14 +677,24 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
         // XXX Sway applies exclusive surfaces first, then the non-exclusive ones
         var arrangement: [(Surface, Set<ViewAttribute>, wlr_box)] = []
         for layer in layerShellLayers[0..<(layerShellLayers.count / 2)] {
-            addTo(arrangement: &arrangement, output: output, layer: layer, layerShellData: data)
+            addTo(
+                arrangement: &arrangement,
+                output: output,
+                layoutBox: box,
+                layer: layer,
+                layerShellData: data)
         }
 
-        let usableBox = data.usableBoxes[output.data.output] ?? box
+        let usableBox = determineUsableBox(on: output, data: data, box: box)
         arrangement += wrapped.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: usableBox)
 
         for layer in layerShellLayers[(layerShellLayers.count / 2)...] {
-            addTo(arrangement: &arrangement, output: output, layer: layer, layerShellData: data)
+            addTo(
+                arrangement: &arrangement,
+                output: output,
+                layoutBox: box,
+                layer: layer,
+                layerShellData: data)
         }
 
         return arrangement
@@ -688,7 +709,12 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
 
         if let data: LayerShellData = dataProvider.getExtensionData() {
             for layer in layerShellLayers {
-                addTo(arrangement: &arrangement, output: output, layer: layer, layerShellData: data)
+                addTo(
+                    arrangement: &arrangement,
+                    output: output,
+                    layoutBox: box,
+                    layer: layer,
+                    layerShellData: data)
             }
         }
 
@@ -718,15 +744,28 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
     private func addTo<L: Layout>(
         arrangement: inout [(Surface, Set<ViewAttribute>, wlr_box)],
         output: Output<L>,
+        layoutBox: wlr_box,
         layer: zwlr_layer_shell_v1_layer,
         layerShellData: LayerShellData
     ) where L.OutputData == OutputDetails {
         if let layer = layerShellData.layers[output.data.output]?[layer] {
             for (layerSurface, box) in layer.boxes {
-                if layer.mapped.contains(layerSurface) {
+                if layoutBox.contains(box: box) && layer.mapped.contains(layerSurface) {
                     arrangement.append((Surface.layer(surface: layerSurface), [.undecorated], box))
                 }
             }
+        }
+    }
+
+    private func determineUsableBox<L: Layout>(
+        on output: Output<L>,
+        data: LayerShellData,
+        box: wlr_box
+    ) -> wlr_box where L.OutputData == OutputDetails {
+        if let usableBox = data.usableBoxes[output.data.output], box.contains(box: usableBox) {
+            return usableBox
+        } else {
+            return box
         }
     }
 }
