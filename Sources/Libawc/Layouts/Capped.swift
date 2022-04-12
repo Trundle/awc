@@ -41,6 +41,14 @@ public final class Capped<WrappedLayout: Layout>: Layout {
             stack: stack.first(n: self.limit),
             box: box)
     }
+
+    public func expand() -> Capped<WrappedLayout> {
+        Capped(layout: self.layout.expand(), limit: self.limit)
+    }
+
+    public func shrink() -> Capped<WrappedLayout> {
+        Capped(layout: self.layout.shrink(), limit: self.limit)
+    }
 }
 
 fileprivate extension List {
