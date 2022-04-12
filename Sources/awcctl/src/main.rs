@@ -16,6 +16,20 @@ enum Request {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+struct ViewBox {
+    x: isize,
+    y: isize,
+    width: isize,
+    height: isize,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Layout {
+    description: String,
+    views: Vec<ViewBox>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 struct Workspace {
     tag: String,
     views: Vec<String>,
@@ -96,7 +110,7 @@ fn read_response<R: DeserializeOwned>(
     serde_json::from_slice(response_data.as_slice()).map_err(|x| x.into())
 }
 
-fn request_layouts(stream: &mut UnixStream) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn request_layouts(stream: &mut UnixStream) -> Result<Vec<Layout>, Box<dyn std::error::Error>> {
     send_request(stream, &Request::ListLayouts {})?;
     read_response(stream)
 }
@@ -106,7 +120,14 @@ fn list_layouts(stream: &mut UnixStream, json: bool) -> Result<(), Box<dyn std::
     if json {
         println!("{}", serde_json::to_string_pretty(&response)?);
     } else {
-        println!("{}", response.join("\n"));
+        println!(
+            "{}",
+            response
+                .iter()
+                .map(|l| l.description.clone())
+                .collect::<Vec<String>>()
+                .join("\n")
+        );
     }
 
     Ok(())
@@ -156,7 +177,10 @@ fn rename_workspace(
 }
 
 fn select_layout(stream: &mut UnixStream, menu: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let layouts = request_layouts(stream)?;
+    let layouts = request_layouts(stream)?
+        .iter()
+        .map(|l| l.description.clone())
+        .collect::<Vec<_>>();
     if let Some(layout_number) = exec_menu(menu, layouts.as_slice())? {
         send_request(
             stream,

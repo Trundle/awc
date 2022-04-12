@@ -1,8 +1,8 @@
 *-protocol.c
 *-protocol.h
 
-*.generated.go
-
 /.build/
 /.idea/
 /Sources/awc_config/libawc_config.*
+
+target/

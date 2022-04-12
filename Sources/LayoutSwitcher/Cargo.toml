@@ -1,0 +1,11 @@
+[package]
+name = "layout_switcher"
+version = "0.1.0"
+authors = ["Andreas Stührk <andy@hammerhartes.de>"]
+edition = "2021"
+
+[dependencies]
+gio = "0.15.10"
+gtk = { version = "0.4.7", package = "gtk4" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

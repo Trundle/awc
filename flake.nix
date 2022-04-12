@@ -46,6 +46,8 @@
           xorg.libxcb
           cairo
 
+          gtk4
+
           dhall
           dhall-lsp-server
           swift

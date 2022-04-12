@@ -242,17 +242,37 @@ fileprivate func handleClientWriteable(fd: CInt, mask: UInt32, data: UnsafeMutab
     return 0
 }
 
+fileprivate func layoutPreview<L: Layout>(
+    for viewSet: ViewSet<L, L.View>,
+    dataProvider: ExtensionDataProvider,
+    size: (Int, Int) = (256, 128)
+) -> [(String, [wlr_box])] {
+    let box = wlr_box(x: 0, y: 0, width: Int32(size.0), height: Int32(size.1))
+    var result: [(String, [wlr_box])] = []
+    for layout in sequence(first: viewSet.current.workspace.layout.firstLayout(), 
+                           next: { $0.nextLayout() }) {
+        let arrangement: [(L.View, Set<ViewAttribute>, wlr_box)]
+        let output = viewSet.current
+        if let stack = output.workspace.stack {
+            arrangement = layout.doLayout(
+                dataProvider: dataProvider,
+                output: output,
+                stack: stack,
+                box: box)
+        } else {
+            arrangement = layout.emptyLayout(dataProvider: dataProvider, output: output, box: box)
+        }
+        result.append((layout.description, arrangement.map { $0.2 }))
+    }
+    return result
+}
 
 func createRequestHandler<L: Layout>(awc: Awc<L>) -> (CtlClient, CtlRequest) throws -> () {
     { (client, request) in
         switch request {
         case .listLayouts:
-            var layouts: [String] = []
-            var currentLayout: L? = awc.defaultLayout
-            while currentLayout != nil {
-                layouts.append(currentLayout!.description)
-                currentLayout = currentLayout!.nextLayout()
-            }
+            let layouts = layoutPreview(for: awc.viewSet, dataProvider: awc)
+                .map { LayoutRepresentation(description: $0.0, views: $0.1) }
             try client.write(response: layouts)
         case .listWorkspaces:
             let workspaces: [[String: Any]] = awc.viewSet.workspaces().map {
@@ -300,6 +320,37 @@ func createRequestHandler<L: Layout>(awc: Awc<L>) -> (CtlClient, CtlRequest) thr
                 }
             }
             try client.write(response: "ok")
+        }
+    }
+}
+
+
+fileprivate struct LayoutRepresentation {
+    let description: String
+    let views: [wlr_box]
+
+    enum CodingKeys: String, CodingKey {
+        case description
+        case views
+        case x
+        case y
+        case width
+        case height
+    }
+}
+
+extension LayoutRepresentation: Encodable {
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.description, forKey: .description)
+
+        var viewsContainer = container.nestedUnkeyedContainer(forKey: .views)
+        for view in self.views {
+            var viewContainer = viewsContainer.nestedContainer(keyedBy: CodingKeys.self)
+            try viewContainer.encode(view.x, forKey: .x)
+            try viewContainer.encode(view.y, forKey: .y)
+            try viewContainer.encode(view.width, forKey: .width)
+            try viewContainer.encode(view.height, forKey: .height)
         }
     }
 }

@@ -47,12 +47,18 @@ Sources/awc_config/libawc_config.so: Sources/awc_config/src/lib.rs Sources/awc_c
 Sources/awcctl/target/release/awcctl: Sources/awcctl/src/main.rs
 	cd Sources/awcctl && cargo build --release
 
+Sources/LayoutSwitcher/target/release/LayoutSwitcher: Sources/LayoutSwitcher/src/main.rs
+	cd Sources/LayoutSwitcher && cargo build --release
+
 target/awc: awc
 	mkdir -p target
 	ln -sf $(shell swift build -c $(config) --show-bin-path)/awc target/awc
 
 target/awcctl: Sources/awcctl/target/release/awcctl
 	ln -sf $(shell realpath $<) target/awcctl
+
+target/layout_switcher: Sources/LayoutSwitcher/target/release/layout_switcher
+	ln -sf $(shell realpath $<) target/layout_switcher
 
 target/SpawnHelper: Sources/SpawnHelper/main.c
 	mkdir -p target
@@ -91,6 +97,7 @@ fmt:
 	dhall format Sources/awc_config/Dhall/Types.dhall
 	cd Sources/awc_config && cargo fmt
 	cd Sources/awcctl && cargo fmt
+	cd Sources/LayoutSwitcher && cargo fmt
 
 clippy:
 	cd Sources/awc_config && cargo clippy
@@ -103,7 +110,7 @@ validate: validateShaders clippy
 	nixpkgs-fmt --check flake.nix
 	dhall type < Sources/awc_config/Dhall/Types.dhall
 
-all: target/awc target/awcctl target/SpawnHelper
+all: target/awc target/awcctl target/layout_switcher target/SpawnHelper
 
 
 .DEFAULT_GOAL=all
