@@ -30,6 +30,8 @@ enum Action {
     SwapPrimary,
     SwitchVT(u8),
     NextLayout,
+    AssignScratchpad,
+    ToggleScratchpad,
     SwapWorkspaces,
     SwapWorkspaceTagWith(String),
     View(String),
@@ -60,6 +62,8 @@ impl Action {
             move_to: std::ptr::null(),
             move_to_output: 0,
             switch_vt: 0,
+            assign_scratchpad: false,
+            toggle_scratchpad: false,
             view: std::ptr::null(),
         };
         match self {
@@ -83,6 +87,8 @@ impl Action {
             Action::SwapPrimary => action.swap_primary = true,
             Action::SwitchVT(vt) => action.switch_vt = *vt,
             Action::NextLayout => action.next_layout = true,
+            Action::AssignScratchpad => action.assign_scratchpad = true,
+            Action::ToggleScratchpad => action.toggle_scratchpad = true,
             Action::SwapWorkspaces => action.swap_workspaces = true,
             Action::SwapWorkspaceTagWith(ws) => {
                 action.swap_workspace_tag_with = str_to_c_char(ws, "swap workspace tag")?
@@ -284,6 +290,8 @@ pub struct AwcAction {
     reset_layouts: bool,
     move_to: *const c_char,
     move_to_output: u8,
+    assign_scratchpad: bool,
+    toggle_scratchpad: bool,
     switch_vt: u8,
     view: *const c_char,
 }

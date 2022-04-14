@@ -22,6 +22,8 @@ let Action =
       | ResetLayouts
       | MoveTo : Text
       | MoveToOutput : Natural
+      | AssignScratchpad
+      | ToggleScratchpad
       | SwapWorkspaces
       | SwapWorkspaceTagWith : Text
       | SwitchVT : Natural
@@ -319,7 +321,8 @@ let Config =
             }
           , resizeFrame = { r = 0x18, g = 0xca, b = 0xe6, a = 0x80 }
           }
-        , workspaces = [ "1", "2", "3", "4", "5", "6", "7", "8", "9" ]
+        , workspaces =
+          [ "1", "2", "3", "4", "5", "6", "7", "8", "9", "scratchpad" ]
         }
       }
 

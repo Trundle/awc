@@ -47,6 +47,9 @@ public enum Action {
     case shrink
     /// Push focused surface back into tiling
     case sink
+    /// Assign the current focus as scratchpad
+    case assignScratchpad
+    case toggleScratchpad
     /// Swap workspaces on primary and secondary output
     case swapWorkspaces
     /// Swaps the tags of the currently focused workspace and the workspace with the given tag
@@ -291,6 +294,8 @@ private func assertExactlyOneAction(_ action: AwcAction) {
         , action.swap_primary
         , action.swap_workspaces
         , action.next_layout
+        , action.assign_scratchpad
+        , action.toggle_scratchpad
         ].reduce(false, { assert(!$0 || !$1); return $0 || $1 })
 
     let numArgAction =
@@ -356,6 +361,10 @@ private func toAction(_ action: AwcAction) -> Action {
         return .shrink
     } else if action.sink {
         return .sink
+    } else if action.assign_scratchpad {
+        return .assignScratchpad
+    } else if action.toggle_scratchpad {
+        return .toggleScratchpad
     }  else if action.swap_workspaces {
         return .swapWorkspaces
     } else if let tag = action.swap_workspace_tag_with {

@@ -139,6 +139,8 @@ extension Awc {
                     }
                  }
             }
+        case .assignScratchpad: self.assignFocusAsScratchpad()
+        case .toggleScratchpad: self.toggleScratchpad()
         case .switchVt(let n):
             if let session = wlr_backend_get_session(self.backend) {
                 wlr_session_change_vt(session, UInt32(n))
