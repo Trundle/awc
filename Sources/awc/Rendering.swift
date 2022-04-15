@@ -19,8 +19,7 @@ internal func renderSurface(
         return
     }
 
-    // We also have to apply the scale factor for HiDPI outputs. This is only
-    // part of the puzzle, AWC does not fully support HiDPI.
+    // We also have to apply the scale factor for HiDPI outputs
     let scale = Double(output.pointee.scale)
     var box = wlr_box(
         x: px + sx,
