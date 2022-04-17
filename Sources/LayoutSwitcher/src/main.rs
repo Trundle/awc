@@ -125,6 +125,19 @@ where
         .child(&scrolled_window)
         .build();
 
+    let event_controller = gtk::EventControllerKey::new();
+    event_controller.connect_key_pressed({
+        let window = window.clone();
+
+        move |_, key, _, _| {
+            if key == gdk::Key::Escape {
+                window.close();
+            }
+            gtk::Inhibit(false)
+        }
+    });
+    window.add_controller(&event_controller);
+
     window.present();
 }
 
