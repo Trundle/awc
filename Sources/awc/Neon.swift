@@ -188,8 +188,6 @@ class NeonRenderer {
     private var finalProgram: Program!
     private var quadVao: GLuint = 0
     private var quadVbo: GLuint = 0
-    private var cairoSurfaceTextureWidth: Int32 = 0
-    private var cairoSurfaceTextureHeight: Int32 = 0
     private var emptyCairoSurfaceTextureData: [GLubyte] = []
     private var overlayBoundingBox: (Int32, Int32, Int32, Int32) = (0, 0, 0, 0)
     private var nextRects: [(wlr_box, float_rgba)] = []
@@ -433,9 +431,6 @@ class NeonRenderer {
                 0)
         }
         self.checkFramebufferComplete()
- 
-        self.cairoSurfaceTextureWidth = 0
-        self.cairoSurfaceTextureHeight = 0
     }
 
     private func initOverlayTextures() {
@@ -509,28 +504,6 @@ class NeonRenderer {
         self.unbindTexture()
     }
 
-    private func initCairoSurfaceTexture(width: Int32, height: Int32) {
-        self.bind(texture: .cairoSurface)
-        gl { glTexImage2D(
-            GLenum(GL_TEXTURE_2D),
-            0,
-            GL_RGBA,
-            GLsizei(width),
-            GLsizei(height),
-            0,
-            GLenum(GL_RGBA),
-            GLenum(GL_UNSIGNED_BYTE),
-            nil)
-        }
-        gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR) }
-        gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR) }
-        gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE) }
-        gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE) }
-        self.cairoSurfaceTextureWidth = width
-        self.cairoSurfaceTextureHeight = height
-        self.emptyCairoSurfaceTextureData = Array(repeating: GLubyte(0), count: Int(width * height) * 4)
-    }
-
     private func checkFramebufferComplete() {
         let status = gl { glCheckFramebufferStatus(GLenum(GL_FRAMEBUFFER)) }
         guard status == GL_FRAMEBUFFER_COMPLETE else {
@@ -557,13 +530,6 @@ class NeonRenderer {
         self.nextRects = []
         self.nextSurfaces = []
 
-        // N.B. only considers cairo surfaces
-        let (requiredWidth, requiredHeight) = surfaces.reduce((0, 0), {
-            (
-                max($0.0, $1.2.width), 
-                max($0.1, $1.2.height)
-            )
-        })
         let boxes = 
             surfaces.map { wlr_box(x: $0.0, y: $0.1, width: $0.2.width, height: $0.2.height) }
             + rects.map { $0.0 }
@@ -593,10 +559,6 @@ class NeonRenderer {
             gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), GLuint(originalFbo)) }
         }
 
-        if requiredWidth > self.cairoSurfaceTextureWidth || requiredHeight > self.cairoSurfaceTextureHeight {
-            self.initCairoSurfaceTexture(width: requiredWidth, height: requiredHeight)
-        }
-
         self.bind(framebuffer: .overlay)
         gl { glClearColor(0, 0, 0, 0) }
         gl { glClear(GLbitfield(GL_COLOR_BUFFER_BIT)) }
@@ -614,49 +576,42 @@ class NeonRenderer {
             self.unbindTexture()
         }
 
-        defer {
-            gl { glPixelStorei(GLenum(GL_UNPACK_ROW_LENGTH_EXT), 0) }
-        }
+        gl { glEnable(GLenum(GL_BLEND)) }
+        gl { glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA)) }
+
         for (x, y, surface) in surfaces {
             surface.withRawPointer {
+                //let name = String((0..<6).map{_ in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".randomElement()!})
+                //cairo_surface_write_to_png($0, "/tmp/debugsurfaces/\(name)")
+
                 let data = cairo_image_surface_get_data($0)
-                let stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, surface.width)
-                gl { glPixelStorei(GLenum(GL_UNPACK_ROW_LENGTH_EXT), stride / 4) }
+                gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR) }
+                gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR) }
+                gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE) }
+                gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE) }
+                gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_SWIZZLE_R), GL_BLUE) }
+                gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_SWIZZLE_B), GL_RED) }
                 gl {
-                    glTexSubImage2D(
+                    glTexImage2D(
                         GLenum(GL_TEXTURE_2D),
                         0,
-                        0,
-                        0,
+                        GL_RGBA,
                         surface.width,
                         surface.height,
-                        GLenum(GL_BGRA_EXT),
+                        0,
+                        GLenum(GL_RGBA),
                         GLenum(GL_UNSIGNED_BYTE),
                         data)
                 }
             }
 
-            self.renderSurface(on: output, x: x, y: y)
-
-            gl { glPixelStorei(GLenum(GL_UNPACK_ROW_LENGTH_EXT), self.cairoSurfaceTextureWidth)}
-            gl {
-                glTexSubImage2D(
-                    GLenum(GL_TEXTURE_2D),
-                    0,
-                    0,
-                    0,
-                    surface.width,
-                    surface.height,
-                    GLenum(GL_BGRA_EXT),
-                    GLenum(GL_UNSIGNED_BYTE),
-                    self.emptyCairoSurfaceTextureData)
-            }
+            self.renderSurface(on: output, x: x, y: y, width: surface.width, height: surface.height)
         }
     }
 
-    private func renderSurface<L>(on output: Output<L>, x: Int32, y: Int32)
+    private func renderSurface<L>(on output: Output<L>, x: Int32, y: Int32, width: Int32, height: Int32)
     where L.OutputData == OutputDetails, L.View == Surface {
-        var box = wlr_box(x: x, y: y, width: cairoSurfaceTextureWidth, height: cairoSurfaceTextureHeight)
+        var box = wlr_box(x: x, y: y, width: width, height: height)
         var glMatrix: matrix9 = (0, 0, 0, 0, 0, 0, 0, 0, 0)
         self.glMatrix(for: &box, on: output, &glMatrix)
 
