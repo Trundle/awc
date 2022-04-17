@@ -42,8 +42,8 @@ uniform mat3 aProj;
 out vec2 TexCoord;
 
 void main() {
-	gl_Position = vec4(aProj * vec3(aPos, 1.0), 1.0);
-	TexCoord = aTexCoord;
+    gl_Position = vec4(aProj * vec3(aPos, 1.0), 1.0);
+    TexCoord = aTexCoord;
 }
 """
 
@@ -70,8 +70,8 @@ uniform mat3 aProj;
 out vec2 TexCoord;
 
 void main() {
-	gl_Position = vec4(aProj * vec3(aPos, 1.0), 1.0);
-	TexCoord = aTexCoord;
+    gl_Position = vec4(aProj * vec3(aPos, 1.0), 1.0);
+    TexCoord = aTexCoord;
 }
 """
 
@@ -365,7 +365,7 @@ class NeonRenderer {
                 2 * GLsizei(MemoryLayout<GLfloat>.size),
                 nil)
         }
-	    gl {
+        gl {
             glVertexAttribPointer(
                 1,
                 2,
@@ -469,8 +469,8 @@ class NeonRenderer {
         }
         gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR) }
         gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR) }
-    	gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE) }
-    	gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE) }
+        gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE) }
+        gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE) }
     }
 
     private func initBlurPingPongTextures() {
@@ -494,8 +494,8 @@ class NeonRenderer {
             }
             gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR) }
             gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR) }
-    	    gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE) }
-    	    gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE) }
+            gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE) }
+            gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE) }
             gl {
                 glFramebufferTexture2D(
                     GLenum(GL_FRAMEBUFFER),
@@ -524,8 +524,8 @@ class NeonRenderer {
         }
         gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR) }
         gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR) }
-    	gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE) }
-    	gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE) }
+        gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE) }
+        gl { glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE) }
         self.cairoSurfaceTextureWidth = width
         self.cairoSurfaceTextureHeight = height
         self.emptyCairoSurfaceTextureData = Array(repeating: GLubyte(0), count: Int(width * height) * 4)

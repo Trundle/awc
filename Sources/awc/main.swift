@@ -353,10 +353,10 @@ extension Awc {
 
     /**
      * This event is forwarded by the cursor when a pointer emits an frame
-	 * event. Frame events are sent after regular pointer events to group
-	 * multiple events together. For instance, two axis events may happen at the
-	 * same time, in which case a frame event won't be sent in between.
-	 */
+     * event. Frame events are sent after regular pointer events to group
+     * multiple events together. For instance, two axis events may happen at the
+     * same time, in which case a frame event won't be sent in between.
+     */
     private func handleCursorFrame() {
         wlr_seat_pointer_notify_frame(self.seat)
     }
@@ -422,7 +422,7 @@ extension Awc {
     private func handleNewInput(_ device: UnsafeMutablePointer<wlr_input_device>) {
         if device.pointee.type == WLR_INPUT_DEVICE_KEYBOARD {
             let context = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
-	        let layout = self.config.configureKeyboard(vendor: device.pointee.vendor)
+            let layout = self.config.configureKeyboard(vendor: device.pointee.vendor)
             let keymap: OpaquePointer = layout.withCString { layoutPtr in
                 "compose:rctrl".withCString { optionsPtr in
                     var rules = xkb_rule_names()
