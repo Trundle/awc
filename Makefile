@@ -47,7 +47,7 @@ Sources/awc_config/libawc_config.so: Sources/awc_config/src/lib.rs Sources/awc_c
 Sources/awcctl/target/release/awcctl: Sources/awcctl/src/main.rs
 	cd Sources/awcctl && cargo build --release
 
-Sources/LayoutSwitcher/target/release/LayoutSwitcher: Sources/LayoutSwitcher/src/main.rs
+Sources/LayoutSwitcher/target/release/layout_switcher: Sources/LayoutSwitcher/src/main.rs
 	cd Sources/LayoutSwitcher && cargo build --release
 
 target/awc: awc
