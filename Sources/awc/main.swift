@@ -931,6 +931,11 @@ func main() {
     }
     wlr_data_device_manager_create(wlDisplay)
 
+    guard wlr_primary_selection_v1_device_manager_create(wlDisplay) != nil else {
+        print("[FATAL] Could not create primary selection manager :(")
+        return
+    }
+
     // Creates an output layout, which a wlroots utility for working with an arrangement
     // of screens in a physical layout.
     let outputLayout = wlr_output_layout_create()
