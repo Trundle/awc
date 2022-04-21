@@ -1,8 +1,13 @@
 import Foundation
+import Logging
 
 import awc_config
 import Libawc
 import Wlroots
+
+
+fileprivate let logger = Logger(label: "Config")
+
 
 extension AwcColor {
     func toFloatRgba() -> float_rgba {
@@ -166,7 +171,7 @@ func loadConfig(path: String?) -> Config? {
     var config = AwcConfig()
 
     if let error = awc_config_load(path, &config) {
-        print("[FATAL] Could not load config: \(String(cString: error))")
+        logger.critical("Could not load config: \(String(cString: error))")
         awc_config_str_free(error)
         return nil
     }
@@ -191,7 +196,7 @@ func loadConfig(path: String?) -> Config? {
         if let sym = config.key_bindings[i].sym {
             let keySym = xkb_keysym_from_name(sym, XKB_KEYSYM_NO_FLAGS)
             if keySym == 0 {
-                print("[WARN] Unknown key symbol: \(String(cString: sym))")
+                logger.warning("Unknown key symbol: \(String(cString: sym))")
                 continue
             }
             key = Key.sym(sym: keySym)
@@ -234,7 +239,7 @@ func loadConfig(path: String?) -> Config? {
     guard let layout: AnyLayout<Surface, OutputDetails> = try?
         buildLayout(config.layout, config.number_of_layout_ops)
     else {
-        print("[ERROR] Invalid layout! Please use buildLayout")
+        logger.error("Invalid layout! Please use buildLayout")
         return nil
     }
 
@@ -411,7 +416,7 @@ func runAutostart() {
         do {
             try executeCommand(autostartPath)
         } catch {
-            print("[WARN] Could not execute autostart (\(autostartPath)): \(error)")
+            logger.warning("Could not execute autostart (\(autostartPath)): \(error)")
         }
     }
 }

@@ -137,12 +137,10 @@ extension Awc: XdgDecoration {
 
 func setUpDecorations<L: Layout>(wlDisplay: OpaquePointer, awc: Awc<L>) {
     guard let decorationManager = wlr_server_decoration_manager_create(wlDisplay) else {
-        print("[ERROR] Could not create decoration manager")
-        return
+        fatalError("Could not create decoration manager")
     }
     guard let xdgDecorationManager = wlr_xdg_decoration_manager_v1_create(wlDisplay) else {
-        print("[ERROR] Could not create XDG decorations manager")
-        return
+        fatalError("Could not create XDG decorations manager")
     }
 
     wlr_server_decoration_manager_set_default_mode(

@@ -813,8 +813,7 @@ func layerViewAt<L: Layout>(
 
 func setupLayerShell<L: Layout>(display: OpaquePointer, awc: Awc<L>) {
     guard let layerShell = wlr_layer_shell_v1_create(display) else {
-        print("[DEBUG] Could not create Layer Shell")
-        return
+        fatalError("Could not create Layer Shell")
     }
 
     awc.addExtensionData(LayerShellData())

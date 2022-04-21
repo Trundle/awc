@@ -1,6 +1,12 @@
 import Glibc
+import Logging
+
 import Libawc
 import Wlroots
+
+
+fileprivate let logger = Logger(label: "XWayland")
+
 
 /// Atoms describing the functional type of a window, as set by the client.
 ///
@@ -132,7 +138,7 @@ extension Awc: XWayland {
         let xcbConn = xcb_connect(nil, nil)
         let err = xcb_connection_has_error(xcbConn)
         guard err == 0 else {
-            print("[ERROR] XBC connect failed: \(err)")
+            logger.error("XBC connect failed: \(err)")
             return
         }
         defer {
@@ -158,8 +164,9 @@ extension Awc: XWayland {
                 if error.pointee == nil {
                     self.windowTypeAtoms[reply.pointee.atom] = type
                 } else {
-                    print("[ERROR] X11 error \(String(describing: error.pointee?.pointee.error_code)) when " +
-                            "trying to resolve X11 atom \(type)")
+                    let msg = "X11 error \(String(describing: error.pointee?.pointee.error_code)) when "
+                        + "trying to resolve X11 atom \(type)"
+                    logger.error(Logger.Message(stringLiteral: msg))
                     free(error)
                 }
             }
@@ -260,8 +267,7 @@ func setupXWayland<L: Layout>(
     awc: Awc<L>
 ) {
     guard let xwayland = wlr_xwayland_create(display, compositor, true) else {
-        print("[ERROR] Could not create XWayland")
-        return
+        fatalError("Could not create XWayland")
     }
     awc.addExtensionData(xwayland)
     awc.addListener(xwayland, XWaylandListener.newFor(emitter: xwayland, handler: awc))

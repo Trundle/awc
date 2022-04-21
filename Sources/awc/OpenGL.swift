@@ -1,6 +1,12 @@
+import Logging
 import Wlroots
 
 import Libawc
+
+#if OPENGL_DEBUG
+fileprivate let logger = Logger(label: "OpenGL")
+#endif
+
 
 class Program {
     private let id: GLuint
@@ -74,7 +80,7 @@ func gl<R>(_ block: () -> R, fileId: String = #fileID, line: Int = #line) -> R {
 #if OPENGL_DEBUG
     let error = glGetError()
     if error != GL_NO_ERROR {
-        print("[ERROR] \(fileId):\(line): GL call returned \(error)")
+        logger.error("\(fileId):\(line): GL call returned \(error)")
     }
 #endif
 

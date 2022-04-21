@@ -55,8 +55,7 @@ extension Awc: InputInhibitorHandler {
 
 public func setUpInputInhibitor<L: Layout>(awc: Awc<L>) {
     guard let manager = wlr_input_inhibit_manager_create(awc.wlDisplay) else {
-        print("[ERROR] Could not create input inhibit manager :(")
-        return
+        fatalError("[ERROR] Could not create input inhibit manager :(")
     }
 
     awc.addListener(manager, InputInhibitorListener.newFor(emitter: manager, handler: awc))

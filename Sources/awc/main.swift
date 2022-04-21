@@ -3,6 +3,8 @@
 //
 
 import Glibc
+import Logging
+
 import Libawc
 import Wlroots
 
@@ -14,6 +16,8 @@ typealias wlr_allocator = UInt8
 #endif
 
 // MARK: Awc
+
+fileprivate var logger: Logger!
 
 struct KeyModifiers: OptionSet, Hashable {
     let rawValue: UInt32
@@ -469,7 +473,7 @@ extension Awc {
     private func handleNewOutput(_ wlrOutput: UnsafeMutablePointer<wlr_output>) {
 #if !WLROOTS_0_14
         guard wlr_output_init_render(wlrOutput, self.allocator, self.renderer) else {
-            print("[WARN] Could not initialize output render")
+            logger.error("Could not initialize output render")
             return
         }
 #endif
@@ -510,7 +514,7 @@ extension Awc {
         }
 
         guard let damage = wlr_output_damage_create(wlrOutput) else {
-            print("[WaRN] Could not create output damage, output will be ignored")
+            logger.error("Could not create output damage, output will be ignored")
             return
         }
 
@@ -583,7 +587,7 @@ extension Awc {
                         hidden: $0.hidden + [output.workspace]
                 )
             } else {
-                print("[WARN] Got 'output destroyed' event for some unknown output o_O")
+                logger.warning("Got 'output destroyed' event for some unknown output o_O")
                 return $0
             }
         }
@@ -852,19 +856,20 @@ extension Awc {
 // MARK: main
 
 func main() {
-    wlr_log_init(WLR_DEBUG, nil)
-
     let args = AwcArguments.parseOrExit()
 
+    initLogging(level: args.debug ? .debug : .info)
+    logger = Logger(label: "awc")
+
     guard let config = loadConfig(path: args.configPath) else {
-        print("[FATAL] Could not load configuration")
+        logger.critical("Could not load configuration")
         return
     }
 
     // The Wayland display is managed by libwayland. It handles accepting clients from the Unix
     // socket, managing Wayland globals, and so on.
     guard let wlDisplay = wl_display_create() else {
-        print("[FATAL] Could not create Wayland display :( :(")
+        logger.critical("Could not create Wayland display :( :(")
         return
     }
 
@@ -873,7 +878,7 @@ func main() {
     // backend based on the current environment, such as opening an X11 window
     // if an X11 server is running.
     guard let backend = wlr_backend_autocreate(wlDisplay) else {
-        print("[FATAL] Could not create backend :(")
+        logger.critical("Could not create backend :(")
         return
     }
     defer {
@@ -882,14 +887,14 @@ func main() {
 
     // Create a no-op backend and output. Used when there is no other output.
     guard let noopBackend = wlr_headless_backend_create(wlDisplay) else {
-        print("[FATAL] Could not create headless backend :(")
+        logger.critical("Could not create headless backend :(")
         return
     }
     defer {
         wlr_backend_destroy(noopBackend)
     }
     guard let noopOutput = wlr_headless_add_output(noopBackend, 1024, 768) else {
-        print("[FATAL] Could not create headless output :(")
+        logger.critical("Could not create headless output :(")
         return
     }
 
@@ -898,24 +903,24 @@ func main() {
     // The renderer is responsible for defining the various pixel formats it
     // supports for shared memory, this configures that for clients.
     guard let renderer = wlr_backend_get_renderer(backend) else {
-        print("[FATAL] Could not create renderer :(")
+        logger.critical("Could not create renderer :(")
         return
     }
     let allocator = UnsafeMutablePointer<wlr_allocator>.allocate(capacity: 0)
 #else
     guard let renderer = wlr_renderer_autocreate(backend) else {
-        print("[FATAL] Could not create renderer :(")
+        logger.critical("Could not create renderer :(")
         return
     }
     guard let allocator = wlr_allocator_autocreate(backend, renderer) else {
-        print("[FATAL] Could not create allocator :(")
+        logger.critical("Could not create allocator :(")
         return
     }
 #endif
     wlr_renderer_init_wl_display(renderer, wlDisplay)
 
     guard wlr_renderer_is_gles2(renderer) else {
-        print("[FATAL] Renderer is not a GLES2 renderer :( :(")
+        logger.critical("Renderer is not a GLES2 renderer :( :(")
         return
     }
 
@@ -926,13 +931,13 @@ func main() {
     // the clients cannot set the selection directly without compositor approval,
     // see the handling of the request_set_selection event below.
     guard let compositor = wlr_compositor_create(wlDisplay, renderer) else {
-        print("[FATAL] Could not create compositor :(")
+        logger.critical("Could not create compositor :(")
         return
     }
     wlr_data_device_manager_create(wlDisplay)
 
     guard wlr_primary_selection_v1_device_manager_create(wlDisplay) != nil else {
-        print("[FATAL] Could not create primary selection manager :(")
+        logger.critical("Could not create primary selection manager :(")
         return
     }
 
@@ -948,13 +953,13 @@ func main() {
     // pointer, touch, and drawing tablet device. We also rig up a listener to
     // let us know when new input devices are available on the backend.
     guard let seat = wlr_seat_create(wlDisplay, "seat0") else {
-        print("[FATAL] Could not create seat :(")
+        logger.critical("Could not create seat :(")
         return
     }
 
     // Creates a cursor, which is a wlroots utility for tracking the cursor image shown on screen.
     guard let cursor = wlr_cursor_create() else {
-        print("[FATAL] Could not create cursor :(")
+        logger.critical("Could not create cursor :(")
         return
     }
     wlr_cursor_attach_output_layout(cursor, outputLayout)
@@ -983,7 +988,7 @@ func main() {
 
     // Start the backend. This will enumerate outputs and inputs, become the DRM master, etc
     guard wlr_backend_start(backend) else {
-        print("[FATAL] Could not start backend :(")
+        logger.critical("Could not start backend :(")
         wl_display_destroy(wlDisplay)
         return
     }
@@ -997,7 +1002,7 @@ func main() {
     wlr_gamma_control_manager_v1_create(wlDisplay)
 
     guard let idle = wlr_idle_create(wlDisplay) else {
-        print("[FATAL] Could not create idle :(")
+        logger.critical("Could not create idle :(")
         return
     }
 
@@ -1051,7 +1056,7 @@ func main() {
     // compositor. Starting the backend rigged up all of the necessary event
     // loop configuration to listen to libinput events, DRM events, generate
     // frame events at the refresh rate, and so on.
-    print("[INFO] Running Wayland compositor on WAYLAND_DISPLAY=\(String(cString: socket))")
+    logger.info("Running Wayland compositor on WAYLAND_DISPLAY=\(String(cString: socket))")
     awc.run()
 
     // Once wl_display_run returns, we shut down the server.

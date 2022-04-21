@@ -1,10 +1,12 @@
 import Glibc
 import Foundation
+import Logging
 
 import Cairo
 import Libawc
 import Wlroots
 
+fileprivate let logger = Logger(label: "Actions")
 
 private let spawnHelperPath: String = {
     let arg0 = ProcessInfo.processInfo.arguments[0]
@@ -83,7 +85,7 @@ extension Awc {
             do {
                 try executeCommand(cmd)
             } catch {
-                print("[WARN] Could not execute '\(cmd)': \(error)")
+                logger.warning("Could not execute '\(cmd)': \(error)")
             }
         case .expand: self.modifyAndUpdate { $0.replace(layout: $0.current.workspace.layout.expand()) }
         case .close: self.kill()
@@ -169,12 +171,12 @@ extension Awc {
                     hidden: viewSet.hidden.map { $0.replace(layout: layout) }
                 )
             }
-            print("[INFO] Reloaded config!")
+            logger.info("Reloaded config!")
         } else {
             do {
                 try executeCommand(self.config.generateErrorDisplayCmd(msg: "Reloading config failed :("))
             } catch {
-                print("[WARN] Could not display error message: \(error)")
+                logger.warning("Could not display error message: \(error)")
             }
         }
     }

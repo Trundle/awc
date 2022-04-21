@@ -12,6 +12,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", .upToNextMinor(from: "1.0.0")),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(url: "https://github.com/typelift/SwiftCheck.git", from: "0.12.0")
     ],
     targets: [
@@ -34,6 +35,7 @@ let package = Package(
                 "Libawc",
                 "Wlroots",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Logging", package: "swift-log")
             ]),
         .target(
             name: "LayoutVisualizer",

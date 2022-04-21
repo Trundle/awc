@@ -397,8 +397,7 @@ extension Awc: Subsurface {
 // protocol which is used for application windows.
 func setUpXdgShell<L: Layout>(display: OpaquePointer, awc: Awc<L>) {
     guard let xdg_shell = wlr_xdg_shell_create(display) else {
-        print("[ERROR] Could not create XDG Shell")
-        return
+        fatalError("Could not create XDG Shell")
     }
 
     awc.addListener(xdg_shell, XdgShellListener.newFor(emitter: xdg_shell, handler: awc))
