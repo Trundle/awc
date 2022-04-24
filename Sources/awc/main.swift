@@ -108,8 +108,8 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let idle: UnsafeMutablePointer<wlr_idle>
     let renderSurfaceHook: RenderSurfaceHook<L>
     let viewAtHook: ViewAtHook<L>
-    let defaultLayout: L
     let layoutWrapper: (AnyLayout<L.View, L.OutputData>) -> L
+    var defaultLayout: L
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
