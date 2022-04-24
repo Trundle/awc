@@ -310,7 +310,7 @@ func createRequestHandler<L: Layout>(awc: Awc<L>) -> (CtlClient, CtlRequest) thr
                 try client.write(response: "ok")
             }
         case .setLayout(let layoutNumber):
-            var currentLayout: L? = awc.defaultLayout
+            var currentLayout: L? = awc.viewSet.current.workspace.layout.firstLayout()
             for _ in 0..<layoutNumber {
                 currentLayout = currentLayout?.nextLayout()
             }
