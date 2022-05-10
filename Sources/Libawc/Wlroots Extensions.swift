@@ -174,9 +174,11 @@ public extension wl_list {
 
 public extension UnsafeMutablePointer where Pointee == wlr_subsurface {
     func parentToplevel() -> UnsafeMutablePointer<wlr_xdg_surface>? {
-        guard wlr_surface_is_xdg_surface(self.pointee.parent) else { return nil }
+        guard let parent = self.pointee.parent, wlr_surface_is_xdg_surface(parent) else {
+            return nil
+        }
 
-        var xdgSurface = wlr_xdg_surface_from_wlr_surface(self.pointee.parent)
+        var xdgSurface = wlr_xdg_surface_from_wlr_surface(parent)
         while xdgSurface != nil && xdgSurface?.pointee.role == WLR_XDG_SURFACE_ROLE_POPUP {
             xdgSurface = wlr_xdg_surface_from_wlr_surface(xdgSurface?.pointee.popup.pointee.parent)
         }
