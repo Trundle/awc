@@ -15,6 +15,7 @@ protocol XdgMappedSurface: AnyObject {
     func commit(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
     func newPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>)
     func newSubsurface(subsurface: UnsafeMutablePointer<wlr_subsurface>)
+    func requestFullscreen(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>)
 }
 
 protocol XdgPopup: AnyObject {
@@ -78,11 +79,15 @@ struct XdgSurfaceListener: PListener {
 /// Signal listeners for a mapped XDG surface.
 struct XdgMappedSurfaceListener: PListener {
     weak var handler: XdgMappedSurface?
+    private var surface: UnsafeMutablePointer<wlr_xdg_surface>! = nil
     private var commit: wl_listener = wl_listener()
     private var newPopup: wl_listener = wl_listener()
     private var newSubsurface: wl_listener = wl_listener()
+    private var requestFullscreen: wl_listener = wl_listener()
 
     mutating func listen(to surface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        self.surface = surface
+
         Self.add(signal: &surface.pointee.surface.pointee.events.commit, listener: &self.commit) { (listener, data) in
             Self.handle(from: listener!, data: data!, \Self.commit,
                 { (handler, surface: UnsafeMutablePointer<wlr_surface>) in
@@ -101,12 +106,22 @@ struct XdgMappedSurfaceListener: PListener {
             (listener, data) in
             Self.handle(from: listener!, data: data!, \Self.newSubsurface, { $0.newSubsurface(subsurface: $1) })
         }
+
+        assert(surface.pointee.role == WLR_XDG_SURFACE_ROLE_TOPLEVEL)
+        Self.add(signal: &surface.pointee.toplevel.pointee.events.request_fullscreen, listener: &self.requestFullscreen) {
+            (wlListener, _) in
+            let listenerPtr: UnsafeMutablePointer<Self> = wlContainer(of: wlListener!, \Self.requestFullscreen)
+            if let handler = listenerPtr.pointee.handler {
+                handler.requestFullscreen(xdgSurface: listenerPtr.pointee.surface)
+            }
+        }
     }
 
     mutating func deregister() {
         wl_list_remove(&self.commit.link)
         wl_list_remove(&self.newPopup.link)
         wl_list_remove(&self.newSubsurface.link)
+        wl_list_remove(&self.requestFullscreen.link)
     }
 }
 
@@ -328,6 +343,10 @@ extension Awc: XdgMappedSurface {
             }
 #endif
         }
+    }
+
+    internal func requestFullscreen(xdgSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
+        wlr_xdg_toplevel_set_fullscreen(xdgSurface, xdgSurface.pointee.toplevel.pointee.requested.fullscreen)
     }
 }
 
