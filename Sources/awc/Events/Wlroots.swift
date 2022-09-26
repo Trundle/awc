@@ -8,42 +8,6 @@ import Wlroots
 
 import Libawc
 
-// Wlroot signal handlers don't have an extra parameter for arbitrary consumer-controlled
-// data, but rather use a pattern that assumes that the signal handler is embedded in the
-// data that should be passed. As the handler that triggered the signal is passed to the
-// handler, `wl_container_of` can then be used to access all data required by the signal
-// handler.
-// `wl_container_of` is a macro and as such is very cumbersome to use in Swift. Its
-// functionality can be built with `MemoryLayout`, but Swift only allows to get offsets
-// into structs, not classes. Hence this struct is used as a container for all listeners
-// that don't require any additional state because everything is passed as signal data.
-// Given a signal callback, Swift's `MemoryLayout` can then be used to retrieve the
-// `onEvent` callback property and the (type-safe) event is emitted via that.
-private struct Listeners {
-    var onEvent: (Event) -> ()
-    let obtainPendingEvents: () -> [Event]
-
-    // Backend
-    var newInput: wl_listener = wl_listener()
-    var newOutput: wl_listener = wl_listener()
-
-    // Cursor
-    var cursorAxis: wl_listener = wl_listener()
-    var cursorButton: wl_listener = wl_listener()
-    var cursorFrame: wl_listener = wl_listener()
-    var cursorMotion: wl_listener = wl_listener()
-    var cursorMotionAbsolute: wl_listener = wl_listener()
-
-    init() {
-        var pendingEvents: [Event] = []
-        self.onEvent = { pendingEvents.append($0) }
-        self.obtainPendingEvents = {
-            let events = Array(pendingEvents)
-            pendingEvents.removeAll(keepingCapacity: false)
-            return events
-        }
-    }
-}
 
 /// XXX rename
 protocol PListener {
@@ -306,86 +270,112 @@ private struct KeyboardListener: Listener {
     }
 }
 
+private struct BackendListener: Listener {
+    weak var handler: WlEventHandler?
+    private var newInput: wl_listener = wl_listener()
+    private var newOutput: wl_listener = wl_listener()
+
+    mutating func listen(to backend: UnsafeMutablePointer<wlr_backend>) {
+        Self.add(signal: &backend.pointee.events.new_input, listener: &self.newInput) { (listener, data) in
+            Self.emitEvent(from: listener!, data: data!, \Self.newInput, { Event.newInput(device: $0) })
+        }
+
+        Self.add(signal: &backend.pointee.events.new_output, listener: &self.newOutput) { (listener, data) in
+            Self.emitEvent(from: listener!, data: data!, \Self.newOutput, { Event.newOutput(output: $0) })
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.newInput.link)
+        wl_list_remove(&self.newOutput.link)
+    }
+}
+
+private struct CursorListener: Listener {
+    weak var handler: WlEventHandler?
+    private var axis: wl_listener = wl_listener()
+    private var button: wl_listener = wl_listener()
+    private var frame: wl_listener = wl_listener()
+    private var motion: wl_listener = wl_listener()
+    private var motionAbsolute: wl_listener = wl_listener()
+
+    mutating func listen(to cursor: UnsafeMutablePointer<wlr_cursor>) {
+        Self.add(signal: &cursor.pointee.events.axis, listener: &self.axis) { (listener, data) in
+            Self.emitEvent(
+                from: listener!, data: data!, \Self.axis, { Event.cursorAxis(event: $0) }
+            )
+        }
+
+        Self.add(signal: &cursor.pointee.events.button, listener: &self.button) { (listener, data) in
+            Self.emitEvent(
+                from: listener!, data: data!, \Self.button, { Event.cursorButton(event: $0) }
+            )
+        }
+
+        Self.add(signal: &cursor.pointee.events.frame, listener: &self.frame) { (listener, data) in
+            Self.emitEvent(
+                from: listener!, data: data!, \Self.frame, { Event.cursorFrame(cursor: $0) }
+            )
+        }
+
+        Self.add(signal: &cursor.pointee.events.motion, listener: &self.motion) { (listener, data) in
+            Self.emitEvent(
+                from: listener!, data: data!, \Self.motion, { Event.cursorMotion(event: $0) }
+            )
+        }
+
+        Self.add(signal: &cursor.pointee.events.motion_absolute, listener: &self.motionAbsolute) {
+            (listener, data) in
+            Self.emitEvent(
+                from: listener!,
+                data: data!,
+                \Self.motionAbsolute,
+                { Event.cursorMotionAbsolute(event: $0) }
+            )
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.axis.link)
+        wl_list_remove(&self.button.link)
+        wl_list_remove(&self.frame.link)
+        wl_list_remove(&self.motion.link)
+        wl_list_remove(&self.motionAbsolute.link)
+    }
+}
+
 class WlEventHandler {
-    private var singletonListeners: Listeners
+    private let emitPending: ((Event) -> ()) -> ()
+    private var onEventCallback: (Event) -> ()
     private var listeners: [UnsafeMutableRawPointer: UnsafeMutableRawPointer] = [:]
 
     init() {
-        self.singletonListeners = Listeners()
+        var pendingEvents: [Event] = []
+        self.onEventCallback = { pendingEvents.append($0) }
+        self.emitPending = { emitter in
+            for event in pendingEvents {
+                emitter(event)
+            }
+            pendingEvents.removeAll(keepingCapacity: false)
+        }
     }
 
     var onEvent: (Event) -> () {
         get {
-            self.singletonListeners.onEvent
+            self.onEventCallback
         }
         set {
-            self.singletonListeners.onEvent = newValue
-            for event in self.singletonListeners.obtainPendingEvents() {
-                newValue(event)
-            }
+            self.onEventCallback = newValue
+            self.emitPending(newValue)
         }
     }
 
     func addBackendListeners(backend: UnsafeMutablePointer<wlr_backend>) {
-        assert(self.singletonListeners.newInput.notify == nil, "already listening on a backend")
-
-        self.singletonListeners.newInput.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!, data: data!, \Listeners.newInput, { Event.newInput(device: $0) }
-            )
-        }
-
-        self.singletonListeners.newOutput.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!, data: data!, \Listeners.newOutput, { Event.newOutput(output: $0) }
-            )
-        }
-
-        wl_signal_add(&backend.pointee.events.new_input, &self.singletonListeners.newInput)
-        wl_signal_add(&backend.pointee.events.new_output, &self.singletonListeners.newOutput)
+        self.addListener(backend, BackendListener.newFor(emitter: backend, handler: self))
     }
 
     func addCursorListeners(cursor: UnsafeMutablePointer<wlr_cursor>) {
-        assert(self.singletonListeners.cursorAxis.notify == nil, "already listening on a cursor")
-
-        self.singletonListeners.cursorAxis.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!, data: data!, \Listeners.cursorAxis, { Event.cursorAxis(event: $0) }
-            )
-        }
-
-        self.singletonListeners.cursorButton.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!, data: data!, \Listeners.cursorButton, { Event.cursorButton(event: $0) }
-            )
-        }
-
-        self.singletonListeners.cursorFrame.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!, data: data!, \Listeners.cursorFrame, { Event.cursorFrame(cursor: $0) }
-            )
-        }
-
-        self.singletonListeners.cursorMotion.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!, data: data!, \Listeners.cursorMotion, { Event.cursorMotion(event: $0) }
-            )
-        }
-
-        self.singletonListeners.cursorMotionAbsolute.notify = { (listener, data) in
-            WlEventHandler.emitEvent(
-                from: listener!,
-                data: data!,
-                \Listeners.cursorMotionAbsolute,
-                { Event.cursorMotionAbsolute(event: $0) }
-            )
-        }
-
-        wl_signal_add(&cursor.pointee.events.axis, &self.singletonListeners.cursorAxis)
-        wl_signal_add(&cursor.pointee.events.button, &self.singletonListeners.cursorButton)
-        wl_signal_add(&cursor.pointee.events.frame, &self.singletonListeners.cursorFrame)
-        wl_signal_add(&cursor.pointee.events.motion, &self.singletonListeners.cursorMotion)
-        wl_signal_add(&cursor.pointee.events.motion_absolute, &self.singletonListeners.cursorMotionAbsolute)
+        self.addListener(cursor, CursorListener.newFor(emitter: cursor, handler: self))
     }
 
     func addKeyboardListeners(device: UnsafeMutablePointer<wlr_input_device>) {
@@ -414,17 +404,5 @@ class WlEventHandler {
 
     func removeOutputListeners(output: UnsafeMutablePointer<wlr_output>) {
         self.removeListener(output, OutputListener.self)
-    }
-
-    private static func emitEvent<D>(
-        from: UnsafeMutableRawPointer,
-        data: UnsafeMutableRawPointer,
-        _ path: PartialKeyPath<Listeners>,
-        _ factory: (UnsafeMutablePointer<D>) -> Event
-    ) {
-        let listenersPtr = wlContainer(of: from, path)
-        let typedData = data.bindMemory(to: D.self, capacity: 1)
-        let event = factory(typedData)
-        listenersPtr.pointee.onEvent(event)
     }
 }
