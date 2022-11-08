@@ -15,7 +15,7 @@
 
       pkgs = import nixpkgs {
         system = "x86_64-linux";
-        overlays = [ rust-overlay.overlay ];
+        overlays = [ rust-overlay.overlays.default ];
       };
 
       rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain;
