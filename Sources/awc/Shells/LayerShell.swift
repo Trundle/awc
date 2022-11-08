@@ -99,16 +99,19 @@ extension Awc: LayerShell {
         }
 
         if let output = self.viewSet.outputs().first(where: { $0.data.output == layerSurface.pointee.output } ) {
-            let layers = layerShellData.layers[output.data.output, default: createLayers()]
+            let layers = layerShellData.layers[output.data.output, default: {
+                let outputDestroyedHandler: LayerShellOutputDestroyedHandler<L>? = self.getExtensionData()
+                layerShellData.outputDestroyListeners[output.data.output] =
+                    OutputDestroyListener.newFor(
+                        emitter: output.data.output,
+                        handler: outputDestroyedHandler!
+                    )
+                return createLayers()
+            }()]
             layerShellData.layers[output.data.output] = layers
             guard let layerData = layers[layerSurface.pointee.current.layer] else {
                 return
-            }
-            layerShellData.outputDestroyListeners[layerSurface] =
-                OutputDestroyListener.newFor(
-                    emitter: output.data.output,
-                    handler: LayerShellOutputDestroyedHandler(awc: self, surface: layerSurface)
-                )
+            } 
             self.addListener(layerSurface, LayerSurfaceListener.newFor(emitter: layerSurface, handler: self))
 
             layerData.unmapped.insert(layerSurface)
@@ -125,23 +128,18 @@ extension Awc: LayerShell {
             layerData.mapped.remove(layerSurface)
             layerData.unmapped.remove(layerSurface)
 
-            if let listenerPtr = layerShellData.outputDestroyListeners.removeValue(forKey: layerSurface) {
-                if self.viewSet.outputs().contains(where: { $0.data.output == layerSurface.pointee.output }) {
-                    listenerPtr.pointee.deregister()
-
-                    guard let layers = layerShellData.layers[layerSurface.pointee.output] else {
-                        return
-                    }
-                    let usableBox = self.arrangeLayers(wlrOutput: layerSurface.pointee.output, layers: layers)
-                    layerShellData.usableBoxes[layerSurface.pointee.output] = usableBox
-
-                    self.updateLayout()
-                } else if layerData.mapped.isEmpty && layerData.unmapped.isEmpty {
-                    // Output no longer exists and this was the last surface
-                    layerShellData.usableBoxes.removeValue(forKey: layerSurface.pointee.output)
-                    layerShellData.layers.removeValue(forKey: layerSurface.pointee.output)
+            if self.viewSet.outputs().contains(where: { $0.data.output == layerSurface.pointee.output }) {
+                guard let layers = layerShellData.layers[layerSurface.pointee.output] else {
+                    return
                 }
-                listenerPtr.deallocate()
+                let usableBox = self.arrangeLayers(wlrOutput: layerSurface.pointee.output, layers: layers)
+                layerShellData.usableBoxes[layerSurface.pointee.output] = usableBox
+
+                self.updateLayout()
+            } else if layerData.mapped.isEmpty && layerData.unmapped.isEmpty {
+                // Output no longer exists and this was the last surface
+                layerShellData.usableBoxes.removeValue(forKey: layerSurface.pointee.output)
+                layerShellData.layers.removeValue(forKey: layerSurface.pointee.output)
             }
         }
     }
@@ -480,18 +478,17 @@ private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandle
     where L.View == Surface, L.OutputData == OutputDetails
 {
     private unowned let awc: Awc<L>
-    private let surface: UnsafeMutablePointer<wlr_layer_surface_v1>
 
-    init(awc: Awc<L>, surface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
+    init(awc: Awc<L>) {
         self.awc = awc
-        self.surface = surface
     }
 
     func destroyed(output: UnsafeMutablePointer<wlr_output>) {
         if let data: LayerShellData = self.awc.getExtensionData() {
-            if let listenerPtr = data.outputDestroyListeners[self.surface] {
+            if let listenerPtr = data.outputDestroyListeners.removeValue(forKey: output) {
                 // Deregister the listener already, as the output goes away
                 listenerPtr.pointee.deregister()
+                listenerPtr.deallocate()
             }
 
             if let exclusiveClient = awc.exclusiveClient {
@@ -513,9 +510,17 @@ private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandle
                 }
             }
 
+            // Destroy all layer surfaces on this output
+            for layer in layerShellLayers {
+                if let layerData = data.layers[output]?[layer] {
+                    for surface in layerData.mapped.union(layerData.unmapped) {
+                        wlr_layer_surface_v1_destroy(surface)
+                    }
+                }
+            }
+
             data.layers.removeValue(forKey: output)
         }
-        wlr_layer_surface_v1_destroy(self.surface)
     }
 
     private func findInteractiveMappedLayerSurfaceBy(
@@ -553,7 +558,7 @@ private struct Anchor: OptionSet {
 private class LayerShellData {
     var layers: [UnsafeMutablePointer<wlr_output>: [zwlr_layer_shell_v1_layer: LayerData]] = [:]
     var outputDestroyListeners: [
-        UnsafeMutablePointer<wlr_layer_surface_v1>: UnsafeMutablePointer<OutputDestroyListener>
+        UnsafeMutablePointer<wlr_output>: UnsafeMutablePointer<OutputDestroyListener>
     ] = [:]
     var usableBoxes: [UnsafeMutablePointer<wlr_output>: wlr_box] = [:]
 }
@@ -651,16 +656,9 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
         }
     }
 
-    fileprivate let data: LayerShellData
     private let wrapped: WrappedLayout
 
     init(wrapped: WrappedLayout) {
-        self.wrapped = wrapped
-        self.data = LayerShellData()
-    }
-
-    private init(wrapped: WrappedLayout, data: LayerShellData) {
-        self.data = data
         self.wrapped = wrapped
     }
 
@@ -727,18 +725,18 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
 
     func nextLayout() -> LayerLayout<WrappedLayout>? {
         if let next = wrapped.nextLayout() {
-            return LayerLayout(wrapped: next, data: self.data)
+            return LayerLayout(wrapped: next)
         } else {
             return nil
         }
     }
 
     func expand() -> LayerLayout<WrappedLayout> {
-        LayerLayout(wrapped: self.wrapped.expand(), data: self.data)
+        LayerLayout(wrapped: self.wrapped.expand())
     }
 
     func shrink() -> LayerLayout<WrappedLayout> {
-        LayerLayout(wrapped: self.wrapped.shrink(), data: self.data)
+        LayerLayout(wrapped: self.wrapped.shrink())
     }
 
     private func addTo<L: Layout>(
@@ -816,6 +814,7 @@ func setupLayerShell<L: Layout>(display: OpaquePointer, awc: Awc<L>) {
         fatalError("Could not create Layer Shell")
     }
 
+    awc.addExtensionData(LayerShellOutputDestroyedHandler(awc: awc))
     awc.addExtensionData(LayerShellData())
     awc.addListener(layerShell, LayerShellListener.newFor(emitter: layerShell, handler: awc))
 }
