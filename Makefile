@@ -92,6 +92,7 @@ clean:
 	rm -Rf .build target
 	cd Sources/awc_config && cargo clean
 	cd Sources/awcctl && cargo clean
+	cd Sources/LayoutSwitcher && cargo clean
 
 fmt:
 	dhall format Sources/awc_config/Dhall/Types.dhall
