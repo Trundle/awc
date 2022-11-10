@@ -59,6 +59,7 @@ extension Awc: DragIconHandler {
     }
 
     internal func destroy(icon: UnsafeMutablePointer<wlr_drag_icon>) {
+        self.surfaces.removeValue(forKey: icon.pointee.surface)
         self.removeListener(icon, DragIconListener.self)
     }
 
