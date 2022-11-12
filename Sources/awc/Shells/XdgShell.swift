@@ -251,14 +251,6 @@ extension Awc: XdgSurface {
             self.addListener(xdgSurface, XdgMappedSurfaceListener.newFor(emitter: xdgSurface, handler: self))
 
             if let wlrSurface = xdgSurface.pointee.surface {
-#if WLROOTS_0_14
-                for subsurface in wlrSurface.pointee.subsurfaces_above.sequence(\wlr_subsurface.parent_link) {
-                    newSubsurface(subsurface: subsurface)
-                }
-                for subsurface in wlrSurface.pointee.subsurfaces_below.sequence(\wlr_subsurface.parent_link) {
-                    newSubsurface(subsurface: subsurface)
-                }
-#else
                 for subsurface in wlrSurface.pointee.current.subsurfaces_above
                     .sequence(\wlr_subsurface.current.link)
                 {
@@ -269,7 +261,6 @@ extension Awc: XdgSurface {
                 {
                     newSubsurface(subsurface: subsurface)
                 }
-#endif
             }
 
             self.manage(surface: surface)
@@ -323,14 +314,6 @@ extension Awc: XdgMappedSurface {
         self.addListener(subsurface, SubsurfaceListener.newFor(emitter: subsurface, handler: self))
 
         if let wlrSurface = subsurface.pointee.surface {
-#if WLROOTS_0_14
-            for childSubsurface in wlrSurface.pointee.subsurfaces_above.sequence(\wlr_subsurface.parent_link) {
-                newSubsurface(subsurface: childSubsurface)
-            }
-            for childSubsurface in wlrSurface.pointee.subsurfaces_below.sequence(\wlr_subsurface.parent_link) {
-                newSubsurface(subsurface: childSubsurface)
-            }
-#else
             for childSubsurface in wlrSurface.pointee.current.subsurfaces_above
                 .sequence(\wlr_subsurface.current.link)
             {
@@ -341,7 +324,6 @@ extension Awc: XdgMappedSurface {
             {
                 newSubsurface(subsurface: childSubsurface)
             }
-#endif
         }
     }
 

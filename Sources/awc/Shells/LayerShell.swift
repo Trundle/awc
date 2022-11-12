@@ -449,13 +449,8 @@ extension Awc: LayerShellPopup {
                let output = findOutput(for: parentSurface)
             {
                 let surface = popup.pointee.base.pointee.surface
-#if WLROOTS_0_14
-                let popupSx = popup.pointee.geometry.x - popup.pointee.base.pointee.geometry.x
-                let popupSy = popup.pointee.geometry.y - popup.pointee.base.pointee.geometry.y
-#else
                 let popupSx = popup.pointee.geometry.x - popup.pointee.base.pointee.current.geometry.x
                 let popupSy = popup.pointee.geometry.y - popup.pointee.base.pointee.current.geometry.y
-#endif
 
                 var damage = pixman_region32_t()
                 defer {
@@ -767,13 +762,6 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
         }
     }
 }
-
-
-#if WLROOTS_0_14
-private func wlr_layer_surface_v1_destroy(_ surface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
-    wlr_layer_surface_v1_close(surface)
-}
-#endif
 
 
 func layerViewAt<L: Layout>(

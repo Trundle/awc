@@ -9,12 +9,6 @@ import Libawc
 import Wlroots
 
 
-// MARK: Wlroots compat
-
-#if WLROOTS_0_14
-typealias wlr_allocator = UInt8
-#endif
-
 // MARK: Awc
 
 fileprivate var logger: Logger!
@@ -471,12 +465,10 @@ extension Awc {
     }
 
     private func handleNewOutput(_ wlrOutput: UnsafeMutablePointer<wlr_output>) {
-#if !WLROOTS_0_14
         guard wlr_output_init_render(wlrOutput, self.allocator, self.renderer) else {
             logger.error("Could not initialize output render")
             return
         }
-#endif
 
         let name = wlrOutput.name
 
@@ -898,16 +890,6 @@ func main() {
         return
     }
 
-#if WLROOTS_0_14
-    // If we don't provide a renderer, autocreate makes a GLES2 renderer for us.
-    // The renderer is responsible for defining the various pixel formats it
-    // supports for shared memory, this configures that for clients.
-    guard let renderer = wlr_backend_get_renderer(backend) else {
-        logger.critical("Could not create renderer :(")
-        return
-    }
-    let allocator = UnsafeMutablePointer<wlr_allocator>.allocate(capacity: 0)
-#else
     guard let renderer = wlr_renderer_autocreate(backend) else {
         logger.critical("Could not create renderer :(")
         return
@@ -916,7 +898,6 @@ func main() {
         logger.critical("Could not create allocator :(")
         return
     }
-#endif
     wlr_renderer_init_wl_display(renderer, wlDisplay)
 
     guard wlr_renderer_is_gles2(renderer) else {

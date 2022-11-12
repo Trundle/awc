@@ -75,19 +75,11 @@ public extension UnsafeMutablePointer where Pointee == wlr_surface {
     }
 
     func subsurface(of parent: UnsafeMutablePointer<wlr_surface>) -> Bool {
-#if WLROOTS_0_14
-        parent.pointee.subsurfaces_above.contains(
-            \wlr_subsurface.parent_link, where: { $0.pointee.surface == self }
-        ) || parent.pointee.subsurfaces_below.contains(
-            \wlr_subsurface.parent_link, where: { $0.pointee.surface == self }
-        )
-#else
         parent.pointee.current.subsurfaces_above.contains(
             \wlr_subsurface.current.link, where: { $0.pointee.surface == self }
         ) || parent.pointee.current.subsurfaces_below.contains(
             \wlr_subsurface.current.link, where: { $0.pointee.surface == self }
         )
-#endif
     }
 
     func surfaces() -> [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] {
@@ -201,11 +193,7 @@ public extension UnsafeMutablePointer where Pointee == wlr_surface {
 public extension UnsafeMutablePointer where Pointee == wlr_output {
     var name: String {
         get {
-#if WLROOTS_0_14
-            return toString(array: self.pointee.name)
-#else
             return String(cString: self.pointee.name)
-#endif
         }
     }
 }

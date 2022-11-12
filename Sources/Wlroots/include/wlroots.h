@@ -8,9 +8,7 @@
 #include <wlr/version.h>
 #include <wlr/backend.h>
 #include <wlr/backend/headless.h>
-#if WLR_VERSION_MINOR > 14
 #include <wlr/render/allocator.h>
-#endif
 #include <wlr/render/egl.h>
 #include <wlr/render/gles2.h>
 #include <wlr/render/wlr_renderer.h>
