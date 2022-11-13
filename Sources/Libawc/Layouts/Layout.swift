@@ -1,3 +1,4 @@
+import DataStructures
 import Wlroots
 
 public struct ViewAttribute: Hashable {

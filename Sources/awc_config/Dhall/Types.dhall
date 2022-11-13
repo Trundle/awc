@@ -32,7 +32,7 @@ let Action =
 
 let Button = < Left | Right >
 
-let ButtonAction = < Move | Resize | ResizeByFrame >
+let ButtonAction = < Execute : Text | Move | Resize >
 
 let WindowSelection = < Focused | UnderCursor >
 

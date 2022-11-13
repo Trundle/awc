@@ -5,8 +5,12 @@
 /// for example for toolbars and so on.
 ///
 
+import DataStructures
 import Wlroots
 import Libawc
+import Logging
+
+fileprivate let logger = Logger(label: "LayerShell")
 
 protocol LayerShell: AnyObject {
     func newSurface(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>)
@@ -18,12 +22,6 @@ protocol LayerShell: AnyObject {
 
 protocol MappedLayerSurface: AnyObject {
     func newLayerPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>)
-}
-
-protocol LayerShellPopup: AnyObject {
-    func commit(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
-    func destroy(layerPopup: UnsafeMutablePointer<wlr_xdg_popup>)
-    func map(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>)
 }
 
 /// Signal listeners for a mapped layer
@@ -42,44 +40,13 @@ struct MappedLayerListener: PListener {
     }
 }
 
-struct LayerShellPopupListener: PListener {
-    weak var handler: LayerShellPopup?
-    private var commit: wl_listener = wl_listener()
-    private var destroy: wl_listener = wl_listener()
-    private var map: wl_listener = wl_listener()
-
-    mutating func listen(to popup: UnsafeMutablePointer<wlr_xdg_popup>) {
-        Self.add(signal: &popup.pointee.base.pointee.surface.pointee.events.commit, listener: &self.commit) { (listener, data) in
-            Self.handle(from: listener!, data: data!, \Self.commit, { (handler, surface: UnsafeMutablePointer<wlr_surface>) in
-                if let xdgSurface = wlr_xdg_surface_from_wlr_surface(surface) {
-                    handler.commit(layerPopupSurface: xdgSurface)
-                }
-            })
-        }
-
-        Self.add(signal: &popup.pointee.base.pointee.events.destroy, listener: &self.destroy) { (listener, data) in
-            Self.handle(from: listener!, data: data!, \Self.destroy, { $0.destroy(layerPopup: $1) })
-        }
-
-        Self.add(signal: &popup.pointee.base.pointee.events.map, listener: &self.map) { (listener, data) in
-            Self.handle(from: listener!, data: data!, \Self.map, { $0.map(layerPopupSurface: $1) })
-        }
-    }
-
-    mutating func deregister() {
-        wl_list_remove(&self.commit.link)
-        wl_list_remove(&self.destroy.link)
-        wl_list_remove(&self.map.link)
-    }
-}
-
 private let layerShellLayers =
     (ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND.rawValue...ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY.rawValue)
     .map { zwlr_layer_shell_v1_layer(rawValue: $0) }
 
 private let layersAboveShell = [
+    ZWLR_LAYER_SHELL_V1_LAYER_TOP.rawValue,
     ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY.rawValue,
-    ZWLR_LAYER_SHELL_V1_LAYER_TOP.rawValue
 ].map { zwlr_layer_shell_v1_layer(rawValue: $0) }
 
 extension Awc: LayerShell {
@@ -99,20 +66,20 @@ extension Awc: LayerShell {
         }
 
         if let output = self.viewSet.outputs().first(where: { $0.data.output == layerSurface.pointee.output } ) {
-            let layers = layerShellData.layers[output.data.output, default: {
-                let outputDestroyedHandler: LayerShellOutputDestroyedHandler<L>? = self.getExtensionData()
-                layerShellData.outputDestroyListeners[output.data.output] =
-                    OutputDestroyListener.newFor(
-                        emitter: output.data.output,
-                        handler: outputDestroyedHandler!
-                    )
-                return createLayers()
-            }()]
-            layerShellData.layers[output.data.output] = layers
+            let layers = self.getOrCreateLayers(for: output, shellData: layerShellData)
             guard let layerData = layers[layerSurface.pointee.current.layer] else {
                 return
             } 
             self.addListener(layerSurface, LayerSurfaceListener.newFor(emitter: layerSurface, handler: self))
+
+            guard let sceneSurface = wlr_scene_layer_surface_v1_create(layerData.sceneTree, layerSurface) else {
+                logger.warning("Could not create scene layer for layer surface: out of memory")
+                return
+            }
+            Surface.layer(surface: layerSurface).store(sceneTree: sceneSurface.pointee.tree)
+            withUnsafeMutablePointer(to: &sceneSurface.pointee.tree.pointee.node) {
+                layerData.sceneSurfaces[$0] = sceneSurface
+            }
 
             layerData.unmapped.insert(layerSurface)
             let usableBox = self.arrangeLayers(wlrOutput: output.data.output, layers: layers)
@@ -156,14 +123,6 @@ extension Awc: LayerShell {
 
         let usableBox = self.arrangeLayers(wlrOutput: layerSurface.pointee.output, layers: layers)
         data.usableBoxes[layerSurface.pointee.output] = usableBox
-
-        withLayerData(layerSurface, or: ()) { layerData in
-            if let box = layerData.boxes[layerSurface],
-                let output = findOutput(for: layerSurface)
-            {
-                self.damage(output: output, layerSurface: layerSurface, box: box)
-            }
-        }
     }
 
     func map(layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) {
@@ -197,16 +156,26 @@ extension Awc: LayerShell {
         }
     }
 
-    private func damage(output: Output<L>, layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>, box: wlr_box) {
-        var damage = pixman_region32_t()
-        pixman_region32_init(&damage)
-        defer {
-            pixman_region32_fini(&damage)
-        }
-
-        wlr_surface_get_effective_damage(layerSurface.pointee.surface, &damage)
-        pixman_region32_translate(&damage, box.x, box.y)
-        wlr_output_damage_add(output.data.damage, &damage)
+    private func getOrCreateLayers(
+        for output: Output<L>,
+        shellData: LayerShellData
+    ) -> [zwlr_layer_shell_v1_layer: LayerData] {
+        let layers = shellData.layers[output.data.output, default: {
+            let outputDestroyedHandler: LayerShellOutputDestroyedHandler<L>? = self.getExtensionData()
+            shellData.outputDestroyListeners[output.data.output] =
+                OutputDestroyListener.newFor(
+                    emitter: output.data.output,
+                    handler: outputDestroyedHandler!
+                )
+            let layers = createLayers()
+            let outputLayoutBox = output.data.box
+            for layer in layers.values {
+                wlr_scene_node_set_position(&layer.sceneTree.pointee.node, outputLayoutBox.x, outputLayoutBox.y)
+            }
+            return layers
+        }()]
+        shellData.layers[output.data.output] = layers
+        return layers
     }
 
     private func arrangeLayers(
@@ -216,10 +185,13 @@ extension Awc: LayerShell {
         var usableArea = wlr_box()
         wlr_output_effective_resolution(wlrOutput, &usableArea.width, &usableArea.height)
 
+        var fullArea = usableArea
+
         for layer in layerShellLayers.reversed() {
             if let layerData = layers[layer] {
                 arrangeLayer(
                     wlrOutput: wlrOutput,
+                    fullArea: &fullArea,
                     usableArea: &usableArea,
                     layer: layerData
                 )
@@ -231,137 +203,13 @@ extension Awc: LayerShell {
 
     private func arrangeLayer(
         wlrOutput: UnsafeMutablePointer<wlr_output>,
+        fullArea: inout wlr_box,
         usableArea: inout wlr_box,
         layer: LayerData
     ) {
-        var fullArea = wlr_box()
-        wlr_output_effective_resolution(wlrOutput, &fullArea.width, &fullArea.height)
-        for layerSurface in layer.unmapped.union(layer.mapped) {
-            let bounds: wlr_box
-            if layerSurface.pointee.current.exclusive_zone == -1 {
-                bounds = fullArea
-            } else {
-                bounds = wlr_box(x: 0, y: 0, width: usableArea.width, height: usableArea.height)
-            }
-
-            let state = layerSurface.pointee.current
-
-            var box = wlr_box(
-                x: 0, y: 0,
-                width: Int32(state.desired_width),
-                height: Int32(state.desired_height)
-            )
-            let anchor = Anchor.init(rawValue: state.anchor)
-
-            // Horizontal axis
-            if anchor.isSuperset(of: [.left, .right]) && box.width == 0 {
-                box.x = bounds.x
-                box.width = bounds.width
-            } else if anchor.contains(.left) {
-                box.x = bounds.x
-            } else if anchor.contains(.right) {
-                box.x = bounds.x + (bounds.width - box.width)
-            } else {
-                box.x = bounds.x + ((bounds.width / 2) - (box.width / 2))
-            }
-
-            // Vertical axis
-            if anchor.isSuperset(of: [.top, .bottom]) && box.height == 0 {
-                box.y = bounds.y
-                box.height = bounds.height
-            } else if anchor.contains(.top) {
-                box.y = bounds.y
-            } else if anchor.contains(.bottom) {
-                box.y = bounds.y + (bounds.height - box.height)
-            } else {
-                box.y = bounds.y + ((bounds.height / 2) - (box.height / 2))
-            }
-
-            // Horizontal margin
-            if anchor.isSuperset(of: [.left, .right]) {
-                box.x += Int32(state.margin.left)
-                box.width -= Int32(state.margin.left + state.margin.right)
-            } else if anchor.contains(.left) {
-                box.x += Int32(state.margin.left)
-            } else if anchor.contains(.right) {
-                box.x -= Int32(state.margin.right)
-            }
-
-            // Vertical margin
-            if anchor.isSuperset(of: [.top, .bottom]) {
-                box.y += Int32(state.margin.top)
-                box.height -= Int32(state.margin.top + state.margin.bottom)
-            } else if anchor.contains(.top) {
-                box.y += Int32(state.margin.top)
-            } else if anchor.contains(.bottom) {
-                box.y -= Int32(state.margin.bottom)
-            }
-
-            guard box.width > 0 && box.height > 0 else {
-                wlr_layer_surface_v1_destroy(layerSurface)
-                continue
-            }
-
-            applyExclusive(
-                usableArea: &usableArea,
-                anchor: anchor,
-                exclusive: state.exclusive_zone,
-                margin: (top: Int32(state.margin.top), bottom: Int32(state.margin.bottom),
-                         left: Int32(state.margin.left), right: Int32(state.margin.right))
-            )
-
-            wlr_layer_surface_v1_configure(layerSurface, UInt32(box.width), UInt32(box.height))
-            layer.boxes[layerSurface] = box
-        }
-    }
-
-    private func applyExclusive(
-        usableArea: inout wlr_box,
-        anchor: Anchor,
-        exclusive: Int32,
-        margin: (top: Int32, bottom: Int32, left: Int32, right: Int32)
-    ) {
-        guard exclusive > 0 else {
-            return
-        }
-
-        let edges = [
-            // Top
-            ( singularAnchor: Anchor.top
-            , anchorTriplet: Anchor([Anchor.left, Anchor.right, Anchor.top])
-            , margin: margin.top
-            , positiveAxis: \wlr_box.y
-            , negativeAxis: \wlr_box.height
-            ),
-            // Bottom
-            ( singularAnchor: Anchor.bottom
-            , anchorTriplet: Anchor([Anchor.left, Anchor.right, Anchor.bottom])
-            , margin: margin.bottom
-            , positiveAxis: nil
-            , negativeAxis: \wlr_box.height
-            ),
-            // Left
-            ( singularAnchor: Anchor.left
-            , anchorTriplet: Anchor([Anchor.left, Anchor.top, Anchor.bottom])
-            , margin: margin.bottom
-            , positiveAxis: \wlr_box.x
-            , negativeAxis: \wlr_box.width
-            ),
-            // Left
-            ( singularAnchor: Anchor.right
-            , anchorTriplet: Anchor([Anchor.right, Anchor.top, Anchor.bottom])
-            , margin: margin.right
-            , positiveAxis: nil
-            , negativeAxis: \wlr_box.width
-            )
-        ]
-        for edge in edges {
-            if (anchor == [edge.singularAnchor] || anchor == edge.anchorTriplet) && exclusive + edge.margin > 0 {
-                if let positiveAxis = edge.positiveAxis {
-                    usableArea[keyPath: positiveAxis] += exclusive + edge.margin
-                }
-                usableArea[keyPath: edge.negativeAxis] -= exclusive + edge.margin
-                break
+        for node in layer.sceneTree.pointee.children.sequence(\wlr_scene_node.link) {
+            if let surface = layer.sceneSurfaces[node] {
+                wlr_scene_layer_surface_v1_configure(surface, &fullArea, &usableArea)
             }
         }
     }
@@ -394,27 +242,52 @@ extension Awc: LayerShell {
     fileprivate func findOutput(for layerSurface: UnsafeMutablePointer<wlr_layer_surface_v1>) -> Output<L>? {
         self.viewSet.outputs().first(where: { $0.data.output == layerSurface.pointee.output })
     }
+
+    fileprivate func createLayers() -> [zwlr_layer_shell_v1_layer: LayerData] {
+        var result: [zwlr_layer_shell_v1_layer: LayerData] = [:]
+        var parentTree = self.sceneLayers.background
+        for layer in layerShellLayers {
+            let layerData = LayerData(layer: layer, parentTree: parentTree)
+            result[layer] = layerData
+            parentTree = layerData.sceneTree
+        }
+
+        for (layer, tree) in zip(layersAboveShell, [self.sceneLayers.floating, self.sceneLayers.overlay]) {
+            let layerData = result[layer]!
+            wlr_scene_node_reparent(&layerData.sceneTree.pointee.node, tree)
+        }
+
+        return result
+    }
 }
 
 extension Awc: MappedLayerSurface {
     func newLayerPopup(popup: UnsafeMutablePointer<wlr_xdg_popup>) {
         let parentSurface = parentToplevel(of: popup)
         withLayerData(parentSurface, or: ()) { layerData in
-            if let parentBox = layerData.boxes[parentSurface],
-               let output = self.findOutput(for: parentSurface)
-            {
-                let outputBox = output.data.box
+            for sceneSurface in layerData.sceneSurfaces.values {
+                if sceneSurface.pointee.layer_surface == parentSurface {
+                    wlr_scene_xdg_surface_create(sceneSurface.pointee.tree, popup.pointee.base)
 
-                var toplevelSxBox = wlr_box(
-                  x: -parentBox.x,
-                  y: -parentBox.y,
-                  width: outputBox.width,
-                  height: outputBox.height
-                )
-                wlr_xdg_popup_unconstrain_from_box(popup, &toplevelSxBox)
+                    if let output = self.findOutput(for: parentSurface) {
+                        let outputBox = output.data.box
+
+                        var lx: Int32 = 0
+                        var ly: Int32 = 0
+	                    wlr_scene_node_coords(&sceneSurface.pointee.tree.pointee.node, &lx, &ly)
+
+                        var toplevelSxBox = wlr_box(
+                          x: outputBox.x - lx,
+                          y: outputBox.y - ly,
+                          width: outputBox.width,
+                          height: outputBox.height
+                        )
+                        wlr_xdg_popup_unconstrain_from_box(popup, &toplevelSxBox)
+                    }
+                    break
+                }
             }
         }
-        self.addListener(popup, LayerShellPopupListener.newFor(emitter: popup, handler: self))
     }
 
     private func parentToplevel(
@@ -424,48 +297,6 @@ extension Awc: MappedLayerSurface {
         // If we support popups of popups at some point, this isn't good enough
         return wlr_layer_surface_v1_from_wlr_surface(popup.pointee.parent)!
     }
-}
-
-extension Awc: LayerShellPopup {
-    func commit(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        damageWhole(popup: layerPopupSurface.pointee.popup)
-    }
-
-    func destroy(layerPopup: UnsafeMutablePointer<wlr_xdg_popup>) {
-        self.removeListener(layerPopup, LayerShellPopupListener.self)
-    }
-
-    func map(layerPopupSurface: UnsafeMutablePointer<wlr_xdg_surface>) {
-        let parentSurface = parentToplevel(of: layerPopupSurface.pointee.popup)
-        wlr_surface_send_enter(layerPopupSurface.pointee.surface, parentSurface.pointee.output)
-        damageWhole(popup: layerPopupSurface.pointee.popup)
-    }
-
-
-    private func damageWhole(popup: UnsafeMutablePointer<wlr_xdg_popup>) {
-        let parentSurface = parentToplevel(of: popup)
-        withLayerData(parentSurface, or: ()) { layerData in
-            if let box = layerData.boxes[parentSurface],
-               let output = findOutput(for: parentSurface)
-            {
-                let surface = popup.pointee.base.pointee.surface
-                let popupSx = popup.pointee.geometry.x - popup.pointee.base.pointee.current.geometry.x
-                let popupSy = popup.pointee.geometry.y - popup.pointee.base.pointee.current.geometry.y
-
-                var damage = pixman_region32_t()
-                defer {
-                    pixman_region32_fini(&damage)
-                }
-                wlr_surface_get_effective_damage(surface, &damage)
-                pixman_region32_translate(&damage, box.x + popupSx, box.y + popupSy)
-                wlr_output_damage_add(output.data.damage, &damage)
-            }
-        }
-    }
-}
-
-private func createLayers() -> [zwlr_layer_shell_v1_layer: LayerData] {
-    Dictionary(uniqueKeysWithValues: layerShellLayers.map { ($0, LayerData(layer: $0)) })
 }
 
 /// Reacts to "output destroyed" events and updates layers (closes surfaces and so on)
@@ -505,12 +336,14 @@ private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandle
                 }
             }
 
-            // Destroy all layer surfaces on this output
-            for layer in layerShellLayers {
+            // Destroy all layer surfaces on this output and remove layer trees from the scene graph
+            // We go from top to bottom because scene tree nodes can be children of another layer
+            for layer in layerShellLayers.reversed() {
                 if let layerData = data.layers[output]?[layer] {
                     for surface in layerData.mapped.union(layerData.unmapped) {
                         wlr_layer_surface_v1_destroy(surface)
                     }
+                    wlr_scene_node_destroy(&layerData.sceneTree.pointee.node)
                 }
             }
 
@@ -540,15 +373,6 @@ private class LayerShellOutputDestroyedHandler<L: Layout>: OutputDestroyedHandle
     }
 }
 
-private struct Anchor: OptionSet {
-    let rawValue: UInt32
-
-    static let left = Anchor(rawValue: ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT.rawValue)
-    static let right = Anchor(rawValue: ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT.rawValue)
-    static let top = Anchor(rawValue: ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP.rawValue)
-    static let bottom = Anchor(rawValue: ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM.rawValue)
-}
-
 /// Bookkeeping data for layer shell.
 private class LayerShellData {
     var layers: [UnsafeMutablePointer<wlr_output>: [zwlr_layer_shell_v1_layer: LayerData]] = [:]
@@ -561,12 +385,15 @@ private class LayerShellData {
 /// Data for one layer on one output
 private class LayerData {
     let layer: zwlr_layer_shell_v1_layer
+    let sceneTree: UnsafeMutablePointer<wlr_scene_tree>
+    var sceneSurfaces: [UnsafeMutablePointer<wlr_scene_node>: UnsafeMutablePointer<wlr_scene_layer_surface_v1>] = [:]
     var mapped: Set<UnsafeMutablePointer<wlr_layer_surface_v1>> = []
     var unmapped: Set<UnsafeMutablePointer<wlr_layer_surface_v1>> = []
     var boxes: [UnsafeMutablePointer<wlr_layer_surface_v1>: wlr_box] = [:]
 
-    init(layer: zwlr_layer_shell_v1_layer) {
+    init(layer: zwlr_layer_shell_v1_layer, parentTree: UnsafeMutablePointer<wlr_scene_tree>) {
         self.layer = layer
+        self.sceneTree = wlr_scene_tree_create(parentTree)
     }
 }
 
@@ -761,40 +588,6 @@ final class LayerLayout<WrappedLayout: Layout>: Layout
             return box
         }
     }
-}
-
-
-func layerViewAt<L: Layout>(
-  delegate: ViewAtHook<L>,
-  awc: Awc<L>,
-  x: Double,
-  y: Double
-) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
-{
-    if let data: LayerShellData = awc.getExtensionData() {
-        if let output = awc.viewSet.outputs().first(where: { $0.data.box.contains(x: Int(x), y: Int(y)) }),
-           let layers = data.layers[output.data.output]?.values
-        {
-            let outputBox = output.data.box
-            let outputX = x - Double(outputBox.x)
-            let outputY = y - Double(outputBox.y)
-            for layer in layers {
-                for (layerSurface, box) in layer.boxes {
-                    let sx = outputX - Double(box.x)
-                    let sy = outputY - Double(box.y)
-                    var subX: Double = 0
-                    var subY: Double = 0
-                    if let childSurface = wlr_layer_surface_v1_surface_at(layerSurface, sx, sy, &subX, &subY),
-                       childSurface.isXdgPopup()
-                    {
-                        return (Surface.layer(surface: layerSurface), childSurface, subX, subY)
-                    }
-                }
-            }
-        }
-    }
-
-    return delegate(awc, x, y)
 }
 
 func setupLayerShell<L: Layout>(display: OpaquePointer, awc: Awc<L>) {

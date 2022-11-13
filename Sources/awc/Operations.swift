@@ -1,3 +1,4 @@
+import DataStructures
 import Libawc
 import Wlroots
 
@@ -19,8 +20,8 @@ extension Awc {
                 return
             }
             if wlr_surface_is_xdg_surface(prevSurface) {
-                let prevXdgSurface = wlr_xdg_surface_from_wlr_surface(prevSurface)
-                wlr_xdg_toplevel_set_activated(prevXdgSurface, false)
+                let prevXdgSurface = wlr_xdg_surface_from_wlr_surface(prevSurface)!
+                wlr_xdg_toplevel_set_activated(prevXdgSurface.pointee.toplevel, false)
             } else if wlr_surface_is_xwayland_surface(prevSurface) {
                 if case .xwayland = focus {} else {
                     let prevXWaylandSurface = wlr_xwayland_surface_from_wlr_surface(prevSurface)!
@@ -35,7 +36,7 @@ extension Awc {
             case .layer(_):
                 // XXX what to do here?
                 ()
-            case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface, true)
+            case .xdg(let surface): wlr_xdg_toplevel_set_activated(surface.pointee.toplevel, true)
             case .xwayland(let surface):
                 wlr_xwayland_surface_activate(surface, true)
                 wlr_xwayland_surface_restack(surface, nil, XCB_STACK_MODE_ABOVE)
@@ -88,6 +89,10 @@ extension Awc {
     }
 
     func updateLayout() {
+        for tree in self.sceneTrees.values {
+            wlr_scene_node_set_enabled(&tree.pointee.node, false)
+        }
+
         for output in self.viewSet.outputs() {
             let outputLayoutBox = output.data.box
             let outputBox =
@@ -97,8 +102,14 @@ extension Awc {
                 let arrangement = output.workspace.layout
                     .doLayout(dataProvider: self, output: output, stack: stack, box: outputBox)
                     .filter { $0.2.width > 0 && $0.2.height > 0 }
-                for (surface, _, box) in arrangement {
+                for (surface, _, box) in arrangement.reversed() {
                     surface.configure(output: outputLayoutBox, box: box)
+                    if let tree = self.sceneTrees[surface] {
+                        wlr_scene_node_reparent(&tree.pointee.node, self.sceneLayers.tiling)
+                        wlr_scene_node_lower_to_bottom(&tree.pointee.node)
+                        wlr_scene_node_set_enabled(&tree.pointee.node, true)
+                        wlr_scene_node_set_position(&tree.pointee.node, outputLayoutBox.x + box.x, outputLayoutBox.y + box.y)
+                    }
                 }
                 output.arrangement = arrangement
             } else {
@@ -111,20 +122,16 @@ extension Awc {
                 for surface in stack.reverse().toList() {
                     if let box = self.viewSet.floating[surface] {
                         surface.configure(output: outputLayoutBox, box: box)
-                        output.arrangement.append((surface, [.floating], box))
+
+                        if let tree = self.sceneTrees[surface] {
+                            wlr_scene_node_reparent(&tree.pointee.node, self.sceneLayers.floating)
+                            wlr_scene_node_raise_to_top(&tree.pointee.node)
+                            wlr_scene_node_set_enabled(&tree.pointee.node, true)
+                            wlr_scene_node_set_position(&tree.pointee.node, outputLayoutBox.x + box.x, outputLayoutBox.y + box.y)
+                        }
                     }
                 }
             }
-
-            wlr_output_damage_add_whole(output.data.damage)
-        }
-        if self.outputHudVisible {
-            self.viewSet.current.data.hud?.update(
-                output: self.viewSet.current,
-                renderer: self.renderer,
-                font: self.config.font,
-                colors: self.config.colors.output_hud
-            )
         }
     }
 
@@ -133,7 +140,7 @@ extension Awc {
         self.withFocused {
             switch $0 {
             case .layer: /* layers cannot be closed */ ()
-            case .xdg(let surface): wlr_xdg_toplevel_send_close(surface)
+            case .xdg(let surface): wlr_xdg_toplevel_send_close(surface.pointee.toplevel)
             case .xwayland(let surface): wlr_xwayland_surface_close(surface)
             }
         }

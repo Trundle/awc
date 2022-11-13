@@ -1,5 +1,6 @@
 import XCTest
 
+import DataStructures
 import Libawc
 import Wlroots
 import testHelpers

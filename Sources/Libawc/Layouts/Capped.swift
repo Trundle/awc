@@ -1,3 +1,4 @@
+import DataStructures
 import Wlroots
 
 /// A layout that wraps another layout and limits the number of shown views.

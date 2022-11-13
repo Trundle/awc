@@ -29,14 +29,20 @@
           rust
           rust-analyzer
           rust-cbindgen
+          xorg.xcbutilwm
+
+          swift
+          swiftpm
+          swiftPackages.clang
         ];
 
         buildInputs = with pkgs; [
+          jq
           openssl
 
           wayland
           wayland-protocols
-          wlroots
+          wlroots_0_16
           libdrm
           libxkbcommon
           udev
@@ -50,7 +56,9 @@
 
           dhall
           dhall-lsp-server
-          swift
+          swiftPackages.Dispatch
+          swiftPackages.Foundation
+          swiftPackages.XCTest
 
           # Only used for validation
           glslang

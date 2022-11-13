@@ -1,5 +1,5 @@
+import DataStructures
 import Wlroots
-
 
 public protocol AnyLayoutMapper {
     associatedtype View

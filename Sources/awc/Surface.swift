@@ -4,6 +4,7 @@ import Wlroots
 // XXX Should this be a protocol instead?
 public enum Surface: Hashable {
     case layer(surface: UnsafeMutablePointer<wlr_layer_surface_v1>)
+    // XXX wlr…xdg_toplevel instead? It's always an error to create a Surface.xdg for anything else
     case xdg(surface: UnsafeMutablePointer<wlr_xdg_surface>)
     case xwayland(surface: UnsafeMutablePointer<wlr_xwayland_surface>)
 }
@@ -14,7 +15,7 @@ extension Surface {
         case .layer(let layerSurface):
             wlr_layer_surface_v1_configure(layerSurface, UInt32(box.width), UInt32(box.height))
         case .xdg(let xdgSurface):
-            wlr_xdg_toplevel_set_size(xdgSurface, UInt32(box.width), UInt32(box.height))
+            wlr_xdg_toplevel_set_size(xdgSurface.pointee.toplevel, box.width, box.height)
         case .xwayland(let xwaylandSurface):
             wlr_xwayland_surface_configure(
                     xwaylandSurface,
@@ -32,7 +33,7 @@ extension Surface {
         case .xdg(let surface):
             let edges = WLR_EDGE_LEFT.rawValue | WLR_EDGE_RIGHT.rawValue |
                     WLR_EDGE_TOP.rawValue | WLR_EDGE_BOTTOM.rawValue
-            wlr_xdg_toplevel_set_tiled(surface, edges)
+            wlr_xdg_toplevel_set_tiled(surface.pointee.toplevel, edges)
         case .xwayland(let surface):
             wlr_xwayland_surface_set_maximized(surface, true)
         }
@@ -78,21 +79,6 @@ extension Surface {
             }
         }
     }
-
-    func popupOf(wlrXWaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) -> Bool {
-        switch self {
-        case .layer, .xdg: return false
-        case .xwayland(let surface):
-            var current = surface
-            while current.pointee.parent != nil {
-                current = current.pointee.parent
-                if current == wlrXWaylandSurface {
-                    return true
-                }
-            }
-            return false
-        }
-    }
 }
 
 extension Surface {
@@ -115,49 +101,31 @@ extension Surface {
             }
         }
     }
+}
 
-    func surfaces() -> [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] {
-        switch self {
-        case .layer(let surface): return collectLayerSurfaces(surface)
-        case .xdg(let surface): return collectXdgSurfaces(surface)
-        case .xwayland(let surface): return surface.pointee.surface.surfaces()
+// MARK: Store and retrieve Surfaces from a scene tree
+extension Surface {
+    static func from(sceneTree: UnsafeMutablePointer<wlr_scene_tree>) -> Self {
+        var maybeTree = Optional.some(sceneTree)
+        while let tree = maybeTree {
+            if let rawSurfacePtr = tree.pointee.node.data {
+                let wlrSurface = rawSurfacePtr.assumingMemoryBound(to: wlr_surface.self)
+                if wlr_surface_is_xdg_surface(wlrSurface) {
+                    return .xdg(surface: wlr_xdg_surface_from_wlr_surface(wlrSurface))
+                } else if wlr_surface_is_xwayland_surface(wlrSurface) {
+                    return .xwayland(surface: wlr_xwayland_surface_from_wlr_surface(wlrSurface))
+                } else {
+                    assert(wlr_surface_is_layer_surface(wlrSurface))
+                    return .layer(surface: wlr_layer_surface_v1_from_wlr_surface(wlrSurface))
+                }
+            }
+            maybeTree = tree.pointee.node.parent
         }
+        fatalError("Could not find surface for given wlr_scene_tree")
     }
 
-    private func collectLayerSurfaces(
-        _ surface: UnsafeMutablePointer<wlr_layer_surface_v1>
-    ) -> [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] {
-        var surfaces: [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] = []
-        withUnsafeMutablePointer(to: &surfaces) { (surfacesPtr) in
-            wlr_layer_surface_v1_for_each_surface(
-                    surface,
-                    {
-                        $3!.bindMemory(to: [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)].self, capacity: 1)
-                                .pointee
-                                .append(($0!, $1, $2))
-                    },
-                    surfacesPtr
-            )
-        }
-        return surfaces
-    }
-
-    private func collectXdgSurfaces(
-        _ surface: UnsafeMutablePointer<wlr_xdg_surface>
-    ) -> [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] {
-        var surfaces: [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)] = []
-        withUnsafeMutablePointer(to: &surfaces) { (surfacesPtr) in
-            wlr_xdg_surface_for_each_surface(
-                    surface,
-                    {
-                        $3!.bindMemory(to: [(UnsafeMutablePointer<wlr_surface>, Int32, Int32)].self, capacity: 1)
-                                .pointee
-                                .append(($0!, $1, $2))
-                    },
-                    surfacesPtr
-            )
-        }
-        return surfaces
+    func store(sceneTree: UnsafeMutablePointer<wlr_scene_tree>) {
+        sceneTree.pointee.node.data = UnsafeMutableRawPointer(self.wlrSurface)
     }
 }
 

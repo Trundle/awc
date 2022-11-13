@@ -1,3 +1,4 @@
+import DataStructures
 import Wlroots
 
 /// Splits the output vertically into two regions: the main view is displayed on

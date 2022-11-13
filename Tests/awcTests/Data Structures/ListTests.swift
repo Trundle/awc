@@ -1,6 +1,6 @@
 import XCTest
 
-import Libawc
+import DataStructures
 
 public final class ListTests: XCTestCase {
     func testEmptyIsEmpty() {

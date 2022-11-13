@@ -1,3 +1,4 @@
+import DataStructures
 import Wlroots
 
 /// Magnifies the focused surfaces by a constant factor

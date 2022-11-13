@@ -2,6 +2,7 @@
 // "Smart Border" support: only show borders if there is more than one view
 //
 
+import DataStructures
 import Libawc
 import Wlroots
 
@@ -36,7 +37,7 @@ final class BorderShrinkLayout<Wrapped: Layout>: Layout {
     public func doLayout<L: Layout>(
         dataProvider: ExtensionDataProvider,
         output: Output<L>,
-        stack: Libawc.Stack<L.View>,
+        stack: Stack<L.View>,
         box: wlr_box
     ) -> [(L.View, Set<ViewAttribute>, wlr_box)] where Wrapped.View == L.View, Wrapped.OutputData == L.OutputData {
         let arrangement = self.layout.doLayout(dataProvider: dataProvider, output: output, stack: stack, box: box)
@@ -69,26 +70,6 @@ final class BorderShrinkLayout<Wrapped: Layout>: Layout {
 
     public func shrink() -> BorderShrinkLayout<Wrapped> {
         BorderShrinkLayout(borderWidth: self.borderWidth, layout: self.layout.shrink())
-    }
-}
-
-public func smartBorders<L: Layout>(
-    borderWidth: UInt32,
-    activeBorderColor: float_rgba,
-    inactiveBorderColor: float_rgba,
-    _ renderHook: @escaping RenderSurfaceHook<L>
-) -> RenderSurfaceHook<L>
-    where L.OutputData == OutputDetails
-{
-    { awc, output, surface, attributes, box in
-        if attributes.isDisjoint(with: undecoratedAttributes) {
-            let color = attributes.contains(.focused) ? activeBorderColor : inactiveBorderColor
-            drawBorder(
-                renderer: awc.renderer, output: output.data.output, box: box, width: Int32(borderWidth), color: color
-            )
-        }
-
-        renderHook(awc, output, surface, attributes, box)
     }
 }
 

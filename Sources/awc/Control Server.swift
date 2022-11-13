@@ -1,6 +1,8 @@
 import Foundation
 import Glibc
 
+import ControlProtocol
+import DataStructures
 import Libawc
 import Wlroots
 
@@ -35,6 +37,10 @@ class CtlClient {
         self.server = server
         self.fd = fd
         self.buffer = UnsafeMutablePointer<Int8>.allocate(capacity: CtlClient.BUFFER_SIZE)
+    }
+
+    deinit {
+        self.buffer.deallocate()
     }
 
     func closeConnection() {
@@ -92,7 +98,7 @@ extension CtlClient {
         } while bytesRead < 0 && errno == EINTR
         if bytesRead >= 0 {
             do {
-                for request in try decoder.pushBytes(bytes: self.buffer, count: bytesRead) {
+                for request: CtlRequest in try decoder.pushBytes(bytes: self.buffer, count: bytesRead) {
                     self.server?.handle(request: request, from: self)
                 }
             } catch {
@@ -274,11 +280,22 @@ func createRequestHandler<L: Layout>(awc: Awc<L>) -> (CtlClient, CtlRequest) thr
             let layouts = layoutPreview(for: awc.viewSet, dataProvider: awc)
                 .map { LayoutRepresentation(description: $0.0, views: $0.1) }
             try client.write(response: layouts)
+        case .listOutputs:
+            let outputs = awc.viewSet.outputs().map {
+                [
+                    "name": $0.data.output.name,
+                    "workspace": [
+                        "tag": $0.workspace.tag,
+                        "views": map(stack: $0.workspace.stack),
+                    ]
+                ]
+            }
+            try client.write(response: outputs)
         case .listWorkspaces:
             let workspaces: [[String: Any]] = awc.viewSet.workspaces().map {
                 [
                     "tag": $0.tag,
-                    "views": $0.stack?.toList().map { $0.title } ?? []
+                    "views": map(stack: $0.stack)
                 ]
             }
             try client.write(response: workspaces)
@@ -309,6 +326,13 @@ func createRequestHandler<L: Layout>(awc: Awc<L>) -> (CtlClient, CtlRequest) thr
                 }
                 try client.write(response: "ok")
             }
+        case .setFloating(let box):
+            awc.withFocused { surface in
+                awc.modifyAndUpdate {
+                    $0.float(view: surface, box: box.toWlrBox())
+                }
+            }
+            try client.write(response: "ok")
         case .setLayout(let layoutNumber):
             var currentLayout: L? = awc.viewSet.current.workspace.layout.firstLayout()
             for _ in 0..<layoutNumber {
@@ -322,6 +346,22 @@ func createRequestHandler<L: Layout>(awc: Awc<L>) -> (CtlClient, CtlRequest) thr
             try client.write(response: "ok")
         }
     }
+}
+
+fileprivate func map(stack maybeStack: Stack<Surface>?) -> [[String: Any]] {
+    guard let stack = maybeStack else {
+        return []
+    }
+
+    return (
+        stack.up.reverse().map(mapUnfocusedView) 
+        + [["title": stack.focus.title, "focus": true]]
+        + stack.down.map(mapUnfocusedView)
+    )
+}
+
+fileprivate func mapUnfocusedView(view: Surface) -> [String: Any] {
+    ["title": view.title, "focus": false]
 }
 
 

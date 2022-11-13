@@ -5,6 +5,7 @@
 
 import awc_config
 import CCairo
+import DataStructures
 import Libawc
 import Wlroots
 

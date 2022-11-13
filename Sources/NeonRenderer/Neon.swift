@@ -1,10 +1,9 @@
 import CCairo
 import Cairo
+import DataStructures
+import EGlext
 import Gles2ext
 import Gles32
-import Wlroots
-
-import Libawc
 
 private let backgroundQuadVertexSource = """
 #version 320 es
@@ -157,9 +156,13 @@ private var flip180: matrix9 = (
     0, 0, 1
 )
 
+enum wl_output_transform {
+    case WL_OUTPUT_TRANSFORM_NORMAL
+    case WL_OUTPUT_TRANSFORM_FLIPPED_180
+}
 
 /// Renders Cairo surfaces with a Neon-like effect.
-class NeonRenderer {
+public class NeonRenderer {
     private enum Framebuffers: Int, CaseIterable {
         case overlay
         case blurPingPong1
@@ -190,7 +193,7 @@ class NeonRenderer {
     private var quadVbo: GLuint = 0
     private var emptyCairoSurfaceTextureData: [GLubyte] = []
     private var overlayBoundingBox: (Int32, Int32, Int32, Int32) = (0, 0, 0, 0)
-    private var nextRects: [(wlr_box, float_rgba)] = []
+    private var nextRects: [(Box, float_rgba)] = []
     private var nextSurfaces: [(Int32, Int32, Cairo.Surface)] = []
 
     public init() {
@@ -209,115 +212,121 @@ class NeonRenderer {
         }
     }
 
-    public func render<L>(on output: Output<L>, with renderer: UnsafeMutablePointer<wlr_renderer>)
-    where L.OutputData == OutputDetails, L.View == Surface {
-        assert(scale == output.data.output.pointee.scale)
-        var box = output.data.box
-        box.x = 0
-        box.y = 0
+    public func render(display: EGLDisplay, context: EGLContext, surface: EGLSurface) {
+        var box = Box(x: 0, y: 0, width: self.width, height: self.height)
         var glMatrix: matrix9 = (0, 0, 0, 0, 0, 0, 0, 0, 0)
-        self.glMatrix(for: &box, on: output, &glMatrix)
+        self.glMatrix(for: &box, &glMatrix)
 
-        renderGl(with: renderer) {
-            var originalFbo: GLint = 0
-            gl { glGetIntegerv(GLenum(GL_DRAW_FRAMEBUFFER_BINDING), &originalFbo) }
-
-            if !nextRects.isEmpty || !nextSurfaces.isEmpty {
-                self.updateOverlayTexture(on: output)
-            }
-
-            gl { glClearColor(0, 0, 0, 0) }
-            // The first fbo is for filling the overlay texture, doesn't need to be cleared
-            for fbo in self.framebuffers[1...] {
-                gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), fbo) }
-                gl { glClear(GLbitfield(GL_COLOR_BUFFER_BIT)) }
-            }
-
-            self.scissorOverlayBoundingBox()
-            defer {
-                gl { glDisable(GLenum(GL_SCISSOR_TEST)) }
-            }
-
-            gl { glDisable(GLenum(GL_BLEND)) }
-
-            self.overlay.use {
-                self.bind(framebuffer: .overlayHighlights)
-                gl { glActiveTexture(GLenum(GL_TEXTURE0)) }
-
-                self.overlay.set(name: "aProj", matrix: &glMatrix)
-
-                self.bind(texture: .overlay)
-                self.renderQuad()
-                self.unbindTexture()
-            }
-
-            // Blur bright fragments with two-pass Gaussian blur
-            self.blur.use {
-                self.blur.set(name: "aProj", matrix: &glMatrix)
-                var horizontal = true
-                var bufferIndex = Framebuffers.blurPingPong2
-                var textureIndex = Textures.overlayHighlights
-                for _ in 0..<10{
-                    self.blur.set(name: "horizontal", int: horizontal ? 1 : 0)
-                    self.bind(framebuffer: bufferIndex)
-                    self.bind(texture: textureIndex)
-                    self.renderQuad()
-                    bufferIndex = horizontal ? Framebuffers.blurPingPong1 : Framebuffers.blurPingPong2
-                    textureIndex = horizontal ? Textures.blurPingPong2 : Textures.blurPingPong1
-                    horizontal = !horizontal
-                }
-            }
-
-            gl { glEnable(GLenum(GL_BLEND)) }
-            gl { glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA)) }
-
-            // Finally, render the blurred fragments on top
-            self.finalProgram.use {
-                self.finalProgram.set(name: "aProj", matrix: &glMatrix)
-                gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), GLuint(originalFbo)) }
-                gl { glActiveTexture(GLenum(GL_TEXTURE0)) }
-                self.bind(texture: .overlay)
-                gl { glActiveTexture(GLenum(GL_TEXTURE1)) }
-                self.bind(texture: .blurPingPong1)
-                self.renderQuad()
-            }
-
-            for fbo in self.framebuffers[1...] {
-                gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), fbo) }
-                let attachments = [GLenum(GL_COLOR_ATTACHMENT0)]
-                gl { glInvalidateFramebuffer(GLenum(GL_FRAMEBUFFER), 1, attachments) }
-            }
-
-            gl { glActiveTexture(GLenum(GL_TEXTURE0)) }
+        var originalFbo: GLint = 0
+        gl { glGetIntegerv(GLenum(GL_DRAW_FRAMEBUFFER_BINDING), &originalFbo) }
+        defer {
+            gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), GLuint(originalFbo)) }
         }
+
+        if !nextRects.isEmpty || !nextSurfaces.isEmpty {
+            self.updateOverlayTexture()
+        }
+
+        gl { glClearColor(0, 0, 0, 0) }
+        // The first fbo is for filling the overlay texture, doesn't need to be cleared
+        for fbo in self.framebuffers[1...] {
+            gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), fbo) }
+            gl { glClear(GLbitfield(GL_COLOR_BUFFER_BIT)) }
+        }
+
+        self.scissorOverlayBoundingBox()
+        defer {
+            gl { glDisable(GLenum(GL_SCISSOR_TEST)) }
+        }
+
+        gl { glDisable(GLenum(GL_BLEND)) }
+
+        self.overlay.use {
+            self.bind(framebuffer: .overlayHighlights)
+            gl { glActiveTexture(GLenum(GL_TEXTURE0)) }
+
+            self.overlay.set(name: "aProj", matrix: &glMatrix)
+
+            self.bind(texture: .overlay)
+            self.renderQuad()
+            self.unbindTexture()
+        }
+
+        // Blur bright fragments with two-pass Gaussian blur
+        self.blur.use {
+            self.blur.set(name: "aProj", matrix: &glMatrix)
+            var horizontal = true
+            var bufferIndex = Framebuffers.blurPingPong2
+            var textureIndex = Textures.overlayHighlights
+            for _ in 0..<10{
+                self.blur.set(name: "horizontal", int: horizontal ? 1 : 0)
+                self.bind(framebuffer: bufferIndex)
+                self.bind(texture: textureIndex)
+                self.renderQuad()
+                bufferIndex = horizontal ? Framebuffers.blurPingPong1 : Framebuffers.blurPingPong2
+                textureIndex = horizontal ? Textures.blurPingPong2 : Textures.blurPingPong1
+                horizontal = !horizontal
+            }
+        }
+
+        gl { glEnable(GLenum(GL_BLEND)) }
+        gl { glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA)) }
+
+        // Finally, render the blurred fragments on top
+        self.finalProgram.use {
+            // XXX
+            self.scissorOverlayYInvertedBoundingBox()
+            self.glMatrix(for: &box, &glMatrix, transform: .WL_OUTPUT_TRANSFORM_FLIPPED_180)
+            self.finalProgram.set(name: "aProj", matrix: &glMatrix)
+            gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), GLuint(originalFbo)) }
+            gl { glActiveTexture(GLenum(GL_TEXTURE0)) }
+            self.bind(texture: .overlay)
+            gl { glActiveTexture(GLenum(GL_TEXTURE1)) }
+            self.bind(texture: .blurPingPong1)
+            self.renderQuad()
+        }
+
+        for fbo in self.framebuffers[1...] {
+            gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), fbo) }
+            let attachments = [GLenum(GL_COLOR_ATTACHMENT0)]
+            gl { glInvalidateFramebuffer(GLenum(GL_FRAMEBUFFER), 1, attachments) }
+        }
+
+        gl { glActiveTexture(GLenum(GL_TEXTURE0)) }
     }
 
-    public func update(rects: [(wlr_box, float_rgba)], surfaces: [(Int32, Int32, Cairo.Surface)]) {
+    public func update(rects: [(Box, float_rgba)], surfaces: [(Int32, Int32, Cairo.Surface)]) {
         self.nextRects = rects
         self.nextSurfaces = surfaces
     }
 
-    public func updateSize(width: Int32, height: Int32, scale: Float, renderer: UnsafeMutablePointer<wlr_renderer>) {
+    public func updateSize(
+        display: EGLDisplay,
+        context: EGLContext,
+        surface: EGLSurface,
+        width: Int32,
+        height: Int32,
+        scale: Float
+    ) {
         self.width = width
         self.height = height
         self.scale = scale
         if self.overlay == nil {
-            self.initGl(renderer)
+            self.initGl(display: display, context: context, surface: surface)
         } else {
-            renderGl(with: renderer) {
+            renderGl(display: display, context: context, surface: surface) {
                 self.freeBuffersAndTextures()
                 self.initBuffersAndTextures()
             }
         }
     }
 
-    private func renderBackgroundQuads<L>(quads: [(wlr_box, float_rgba)], on output: Output<L>)
-    where L.OutputData == OutputDetails, L.View == Surface {
+    private func renderBackgroundQuads(quads: [(Box, float_rgba)]) {
         self.backgroundQuads.use {
             for (box, color) in quads {
                 var box = box
                 var glMatrix: matrix9 = (0, 0, 0, 0, 0, 0, 0, 0, 0)
-                self.glMatrix(for: &box, on: output, &glMatrix)
+                self.glMatrix(for: &box, &glMatrix)
 
                 self.backgroundQuads.set(name: "aProj", matrix: &glMatrix)
                 self.backgroundQuads.set(name: "aColor", color.r, color.g, color.b, color.a)
@@ -386,8 +395,8 @@ class NeonRenderer {
         gl { glDrawArrays(GLenum(GL_TRIANGLE_STRIP), 0, 4) }
     }
 
-    private func initGl(_ renderer: UnsafeMutablePointer<wlr_renderer>) {
-        renderGl(with: renderer) {
+    private func initGl(display: EGLDisplay, context: EGLContext, surface: EGLSurface) {
+        renderGl(display: display, context: context, surface: surface) {
             self.backgroundQuads = compileProgram(
                 vertexSource: backgroundQuadVertexSource,
                 fragmentSource: backgroundQuadFragmentSource)
@@ -416,6 +425,12 @@ class NeonRenderer {
     }
 
     private func initBuffersAndTextures() {
+        var originalFbo: GLint = 0
+        gl { glGetIntegerv(GLenum(GL_DRAW_FRAMEBUFFER_BINDING), &originalFbo) }
+        defer {
+            gl { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), GLuint(originalFbo)) }
+        }
+
         gl { glGenFramebuffers(GLsizei(self.framebuffers.count), &self.framebuffers) }
         gl { glGenTextures(GLsizei(self.textures.count), &self.textures) }
         self.initOverlayTextures()
@@ -523,15 +538,14 @@ class NeonRenderer {
         gl { glBindTexture(GLenum(GL_TEXTURE_2D), 0) }
     }
 
-    private func updateOverlayTexture<L>(on output: Output<L>) 
-    where L.OutputData == OutputDetails, L.View == Surface {
+    private func updateOverlayTexture() {
         let rects = self.nextRects
         let surfaces = self.nextSurfaces
         self.nextRects = []
         self.nextSurfaces = []
 
         let boxes = 
-            surfaces.map { wlr_box(x: $0.0, y: $0.1, width: $0.2.width, height: $0.2.height) }
+            surfaces.map { Box(x: $0.0, y: $0.1, width: $0.2.width, height: $0.2.height) }
             + rects.map { $0.0 }
         // N.B. both cairo surfaces and rects
         let (minX, maxX, minY, maxY) =
@@ -563,14 +577,11 @@ class NeonRenderer {
         gl { glClearColor(0, 0, 0, 0) }
         gl { glClear(GLbitfield(GL_COLOR_BUFFER_BIT)) }
 
-        self.renderBackgroundQuads(quads: rects, on: output)
-        self.fillOverlayTexture(output: output, surfaces: surfaces)
+        self.renderBackgroundQuads(quads: rects)
+        self.fillOverlayTexture(surfaces: surfaces)
     }
 
-    private func fillOverlayTexture<L>(
-        output: Output<L>,
-        surfaces: [(Int32, Int32, Cairo.Surface)]
-    ) where L.OutputData == OutputDetails, L.View == Surface {
+    private func fillOverlayTexture(surfaces: [(Int32, Int32, Cairo.Surface)]) {
         self.bind(texture: .cairoSurface)
         defer {
             self.unbindTexture()
@@ -605,15 +616,14 @@ class NeonRenderer {
                 }
             }
 
-            self.renderSurface(on: output, x: x, y: y, width: surface.width, height: surface.height)
+            self.renderSurface(x: x, y: y, width: surface.width, height: surface.height)
         }
     }
 
-    private func renderSurface<L>(on output: Output<L>, x: Int32, y: Int32, width: Int32, height: Int32)
-    where L.OutputData == OutputDetails, L.View == Surface {
-        var box = wlr_box(x: x, y: y, width: width, height: height)
+    private func renderSurface(x: Int32, y: Int32, width: Int32, height: Int32) {
+        var box = Box(x: x, y: y, width: width, height: height)
         var glMatrix: matrix9 = (0, 0, 0, 0, 0, 0, 0, 0, 0)
-        self.glMatrix(for: &box, on: output, &glMatrix)
+        self.glMatrix(for: &box, &glMatrix)
 
         self.cairoSurface.use {
             self.cairoSurface.set(name: "aProj", matrix: &glMatrix)
@@ -621,17 +631,24 @@ class NeonRenderer {
         }
     }
     
-    private func glMatrix<L>(for box: inout wlr_box, on output: Output<L>, _ result: inout matrix9)
-    where L.OutputData == OutputDetails, L.View == Surface {
-        var transformMatrix = output.data.output.pointee.transform_matrix
+    private func glMatrix(
+        for box: inout Box,
+        _ result: inout matrix9,
+        transform: wl_output_transform = .WL_OUTPUT_TRANSFORM_NORMAL
+    ) {
+        var transformMatrix: matrix9 = (
+            1, 0, 0,
+            0, 1, 0,
+            0, 0, 1
+        )
         var projMatrix: matrix9 = (0, 0, 0, 0, 0, 0, 0, 0, 0)
         withUnsafeMutablePointer(to: &projMatrix.0) { projMatrixPtr in
             withUnsafePointer(to: &transformMatrix.0) { (outputTransformMatrixPtr) in
-                wlr_matrix_project_box(projMatrixPtr, &box, WL_OUTPUT_TRANSFORM_NORMAL, 0, outputTransformMatrixPtr)
+                wlr_matrix_project_box(projMatrixPtr, &box, .WL_OUTPUT_TRANSFORM_NORMAL, 0, outputTransformMatrixPtr)
             }
 
             withUnsafeMutablePointer(to: &result.0) { glMatrixPtr in
-                wlr_matrix_projection(glMatrixPtr, self.width, self.height, WL_OUTPUT_TRANSFORM_NORMAL)
+                wlr_matrix_projection(glMatrixPtr, self.width, self.height, transform)
                 wlr_matrix_multiply(glMatrixPtr, glMatrixPtr, projMatrixPtr)
                 wlr_matrix_multiply(glMatrixPtr, &flip180.0, glMatrixPtr)
                 wlr_matrix_transpose(glMatrixPtr, glMatrixPtr)
@@ -645,6 +662,17 @@ class NeonRenderer {
             glScissor(
                 GLint(Float(self.overlayBoundingBox.0) * self.scale),
                 GLint(Float(self.overlayBoundingBox.1) * self.scale),
+                GLint(Float(self.overlayBoundingBox.2) * self.scale),
+                GLint(Float(self.overlayBoundingBox.3) * self.scale)) 
+        }
+    }
+
+    private func scissorOverlayYInvertedBoundingBox() {
+        gl { glEnable(GLenum(GL_SCISSOR_TEST)) }
+        gl { 
+            glScissor(
+                GLint(Float(self.overlayBoundingBox.0) * self.scale),
+                GLint(Float(self.height - self.overlayBoundingBox.1 - self.overlayBoundingBox.3) * self.scale),
                 GLint(Float(self.overlayBoundingBox.2) * self.scale),
                 GLint(Float(self.overlayBoundingBox.3) * self.scale)) 
         }

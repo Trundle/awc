@@ -1,12 +1,30 @@
+import Gles2ext
+import EGlext
 import Logging
-import Wlroots
 
-import Libawc
-
-#if OPENGL_DEBUG
 fileprivate let logger = Logger(label: "OpenGL")
-#endif
 
+public struct float_rgba {
+    public var r: Float
+    public var g: Float
+    public var b: Float
+    public var a: Float
+
+    public init(r: Float, g: Float, b: Float, a: Float) {
+        self.r = r
+        self.g = g
+        self.b = b
+        self.a = a
+    }
+
+    public mutating func withPtr<Result>(_ body: (UnsafePointer<Float>) -> Result) -> Result {
+        withUnsafePointer(to: &self) {
+            $0.withMemoryRebound(to: Float.self, capacity: 4, body)
+        }
+    }
+}
+
+public typealias matrix9 = (Float, Float, Float, Float, Float, Float, Float, Float, Float)
 
 class Program {
     private let id: GLuint
@@ -119,8 +137,8 @@ func compileProgram(vertexSource: String, fragmentSource: String) -> Program {
     return Program(id: program)
 }
 
-func renderGl(with renderer: UnsafeMutablePointer<wlr_renderer>, block: () -> ()) {
-    renderBegin(renderer)
+public func renderGl(display: EGLDisplay, context: EGLContext, surface: EGLSurface, block: () -> ()) {
+    renderBegin(display: display, context: context, surface: surface)
     defer {
         renderEnd()
     }
@@ -128,10 +146,9 @@ func renderGl(with renderer: UnsafeMutablePointer<wlr_renderer>, block: () -> ()
     block()
 }
 
-private func renderBegin(_ renderer: UnsafeMutablePointer<wlr_renderer>) {
-    let egl = wlr_gles2_renderer_get_egl(renderer)
-    if (!wlr_egl_is_current(egl)) {
-        wlr_egl_make_current(egl)
+private func renderBegin(display: EGLDisplay, context: EGLContext, surface: EGLSurface) {
+    if eglMakeCurrent(display, surface, surface, context) == 0 {
+        logger.warning("Could not make EGL context current")
     }
 }
 

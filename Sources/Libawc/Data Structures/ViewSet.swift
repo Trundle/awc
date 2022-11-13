@@ -1,8 +1,11 @@
 import Wlroots
 
+import DataStructures
+
 public class Output<L: Layout> {
     public let workspace: Workspace<L>
     public let data: L.OutputData
+    // XXX should be obsolete with scene graph
     // XXX should this moved to data?
     // The current surface arrangement
     public var arrangement: [(L.View, Set<ViewAttribute>, wlr_box)] = []

@@ -183,7 +183,9 @@ extension Awc: XWayland {
 extension Awc: XWaylandSurface {
     internal func surfaceDestroyed(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         self.removeListener(xwaylandSurface, XWaylandSurfaceListener.self)
-        self.unmapped.remove(Surface.xwayland(surface: xwaylandSurface))
+        let surface = Surface.xwayland(surface: xwaylandSurface)
+        self.unmapped.remove(surface)
+        self.sceneTrees.removeValue(forKey: surface)
     }
 
     internal func configureRequest(event: UnsafeMutablePointer<wlr_xwayland_surface_configure_event>) {
@@ -212,6 +214,13 @@ extension Awc: XWaylandSurface {
     internal func map(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         let surface = Surface.xwayland(surface: xwaylandSurface)
         if self.unmapped.remove(surface) != nil {
+            guard let tree = wlr_scene_subsurface_tree_create(self.sceneLayers.tiling, surface.wlrSurface) else {
+                wl_resource_post_no_memory(surface.wlrSurface.pointee.resource)
+                return
+            }
+            surface.store(sceneTree: tree)
+            self.sceneTrees[surface] = tree
+
             self.addListener(
                 xwaylandSurface,
                 XWaylandMappedSurfaceListener.newFor(emitter: xwaylandSurface, handler: self)
@@ -222,7 +231,9 @@ extension Awc: XWaylandSurface {
 
     internal func unmap(xwaylandSurface: UnsafeMutablePointer<wlr_xwayland_surface>) {
         self.removeListener(xwaylandSurface, XWaylandMappedSurfaceListener.self)
-        handleUnmap(surface: Surface.xwayland(surface: xwaylandSurface))
+        let surface = Surface.xwayland(surface: xwaylandSurface)
+        handleUnmap(surface: surface)
+        self.sceneTrees.removeValue(forKey: surface)
     }
 }
 
@@ -248,16 +259,6 @@ extension Awc: XWaylandMappedSurface {
                 }
             }
         }
-
-        var damage = pixman_region32_t()
-        pixman_region32_init(&damage)
-        defer {
-            pixman_region32_fini(&damage)
-        }
-
-        wlr_surface_get_effective_damage(xwaylandSurface.pointee.surface, &damage)
-        pixman_region32_translate(&damage, box.x, box.y)
-        wlr_output_damage_add(output.data.damage, &damage)
     }
 }
 

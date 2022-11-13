@@ -2,7 +2,6 @@ import Glibc
 import Foundation
 import Logging
 
-import Cairo
 import Libawc
 import Wlroots
 
@@ -190,7 +189,6 @@ extension Awc {
         switch action {
         case .move: self.setToFloatingAndMove(surface)
         case .resize: self.setToFloatingAndResize(surface)
-        case .resizeByFrame: self.setToFloatingAndResizeByFrame(surface)
         }
     }
 
@@ -249,84 +247,9 @@ extension Awc {
             }
         }
     }
-
-    private func setToFloatingAndResizeByFrame(_ surface: Surface) {
-        if let output = self.viewSet.findOutput(view: surface) {
-            let outputBox = output.data.box
-
-            let startX = self.cursor.pointee.x
-            let startY = self.cursor.pointee.y
-
-            var currentX = startX
-            var currentY = startY
-
-            let toBox: (Int32) -> wlr_box = { margin in
-                let x = Int32(min(currentX, startX)) - margin
-                let y = Int32(min(currentY, startY)) - margin
-                return wlr_box(
-                    x: x - outputBox.x, y: y - outputBox.y,
-                    width: Int32(max(currentX, startX)) - x + 2 * margin,
-                    height: Int32(max(currentY, startY)) - y + 2 * margin)
-            }
-
-            let neonRenderer = NeonRenderer()
-            let box = output.data.box
-            neonRenderer.updateSize(
-                width: box.width, height: box.height, scale: output.data.output.pointee.scale,
-                renderer: self.renderer)
-
-            self.dragging = { (_, x, y) in
-                currentX = x
-                currentY = y
-
-                let rects = drawResizeFrame(
-                    frame: toBox(0),
-                    color: self.config.colors.resize_frame.toFloatRgba())
-                neonRenderer.update(rects: rects, surfaces: [])
-
-                // The blur of the neon effect makes the damage box a bit larger
-                var box = toBox(Int32(self.config.borderWidth + 10))
-                wlr_output_damage_add_box(output.data.damage, &box)
-            }
-            self.draggingEnd = { (_, _) in
-                self.modifyAndUpdate {
-                    $0.float(view: surface, box: toBox(0))
-                }
-                self.additionalRenderHook = nil
-            }
-            self.additionalRenderHook = { (renderer, renderingOutput) in
-                if output.data.output == renderingOutput.data.output {
-                    neonRenderer.render(on: renderingOutput, with: renderer)
-                }
-            }
-        }
-    }
 }
 
 private func setWithinBounds(_ box: inout wlr_box, x: Int32, y: Int32, maxX: Int32, maxY: Int32) {
     box.x = min(max(x, 0), maxX - box.width)
     box.y = min(max(y, 0), maxY - box.height)
-}
-
-private func drawResizeFrame(frame: wlr_box, color: float_rgba) -> [(wlr_box, float_rgba)] {
-    let highlight = float_rgba(r: 1, g: 1, b: 1, a: 1)
-    var rects: [(wlr_box, float_rgba)] = [
-        (frame, color),
-        // Outer glow
-        (wlr_box(x: frame.x, y: frame.y, width: frame.width, height: 2), highlight),
-        (wlr_box(x: frame.x, y: frame.y + frame.height, width: frame.width, height: 2), highlight),
-        (wlr_box(x: frame.x, y: frame.y, width: 2, height: frame.height), highlight),
-        (wlr_box(x: frame.x + frame.width, y: frame.y, width: 2, height: frame.height), highlight),
-    ]
-
-    // Draw grid
-    let gridSize: Int32 = 150
-    for y in stride(from: frame.y + gridSize, to: frame.y + frame.height, by: Int(gridSize)) {
-        rects.append((wlr_box(x: frame.x, y: y, width: frame.width, height: 2), highlight))
-    }
-    for x in stride(from: frame.x + gridSize, to: frame.x + frame.width, by: Int(gridSize)) {
-        rects.append((wlr_box(x: x, y: frame.y, width: 2, height: frame.height), highlight))
-    }
-
-    return rects
 }

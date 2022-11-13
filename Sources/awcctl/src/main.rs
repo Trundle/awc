@@ -2,6 +2,7 @@ use std::env;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
+use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -9,10 +10,24 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case", tag = "cmd")]
 enum Request {
     ListLayouts {},
+    ListOutputs {},
     ListWorkspaces {},
-    NewWorkspace { tag: String },
-    RenameWorkspace { tag: String, new_tag: String },
-    SetLayout { layout_number: u8 },
+    NewWorkspace {
+        tag: String,
+    },
+    RenameWorkspace {
+        tag: String,
+        new_tag: String,
+    },
+    SetFloating {
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    },
+    SetLayout {
+        layout_number: u8,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -30,9 +45,21 @@ struct Layout {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+struct View {
+    title: String,
+    focus: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 struct Workspace {
     tag: String,
-    views: Vec<String>,
+    views: Vec<View>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Output {
+    name: String,
+    workspace: Workspace,
 }
 
 fn get_arg_matches() -> clap::ArgMatches {
@@ -49,6 +76,7 @@ fn get_arg_matches() -> clap::ArgMatches {
                 .help("Output JSON"),
         )
         .subcommand(clap::Command::new("list-layouts"))
+        .subcommand(clap::Command::new("list-outputs"))
         .subcommand(clap::Command::new("list-workspaces"))
         .subcommand(clap::Command::new("new-workspace").arg(clap::Arg::new("tag").required(true)))
         .subcommand(
@@ -57,6 +85,7 @@ fn get_arg_matches() -> clap::ArgMatches {
                 .arg(clap::Arg::new("new-tag").required(true)),
         )
         .subcommand(clap::Command::new("select-layout"))
+        .subcommand(clap::Command::new("set-floating"))
         .subcommand_required(true)
         .get_matches()
 }
@@ -133,6 +162,18 @@ fn list_layouts(stream: &mut UnixStream, json: bool) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+fn request_outputs(stream: &mut UnixStream) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
+    send_request(stream, &Request::ListOutputs {})?;
+    read_response(stream)
+}
+
+fn list_outputs(stream: &mut UnixStream, _: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let response = request_outputs(stream)?;
+    println!("{}", serde_json::to_string_pretty(&response)?);
+
+    Ok(())
+}
+
 fn list_workspaces(stream: &mut UnixStream, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     send_request(stream, &Request::ListWorkspaces {})?;
     let response: Vec<Workspace> = read_response(stream)?;
@@ -143,7 +184,15 @@ fn list_workspaces(stream: &mut UnixStream, json: bool) -> Result<(), Box<dyn st
             "{}",
             response
                 .iter()
-                .map(|w| format!("{}: {}", w.tag, w.views.join(", ")))
+                .map(|w| format!(
+                    "{}: {}",
+                    w.tag,
+                    w.views
+                        .iter()
+                        .map(|v| v.title.as_ref())
+                        .collect::<Vec<&str>>()
+                        .join(", ")
+                ))
                 .collect::<Vec<String>>()
                 .join("\n")
         );
@@ -152,8 +201,7 @@ fn list_workspaces(stream: &mut UnixStream, json: bool) -> Result<(), Box<dyn st
     Ok(())
 }
 
-fn new_workspace(stream: &mut UnixStream, tag: String) -> Result<(), Box<dyn std::error::Error>> {
-    send_request(stream, &Request::NewWorkspace { tag })?;
+fn read_ok_response(stream: &mut UnixStream) -> Result<(), Box<dyn std::error::Error>> {
     let result: String = read_response(stream)?;
     if result == "ok" {
         Ok(())
@@ -162,18 +210,18 @@ fn new_workspace(stream: &mut UnixStream, tag: String) -> Result<(), Box<dyn std
     }
 }
 
+fn new_workspace(stream: &mut UnixStream, tag: String) -> Result<(), Box<dyn std::error::Error>> {
+    send_request(stream, &Request::NewWorkspace { tag })?;
+    read_ok_response(stream)
+}
+
 fn rename_workspace(
     stream: &mut UnixStream,
     tag: String,
     new_tag: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     send_request(stream, &Request::RenameWorkspace { tag, new_tag })?;
-    let result: String = read_response(stream)?;
-    if result == "ok" {
-        Ok(())
-    } else {
-        Err(result.into())
-    }
+    read_ok_response(stream)
 }
 
 fn select_layout(stream: &mut UnixStream, menu: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -190,11 +238,38 @@ fn select_layout(stream: &mut UnixStream, menu: &str) -> Result<(), Box<dyn std:
         )?;
     }
 
-    let result: String = read_response(stream)?;
-    if result == "ok" {
-        Ok(())
+    read_ok_response(stream)
+}
+
+fn parse_geometry(line: &str) -> Option<(i32, i32, i32, i32)> {
+    let re = Regex::new(r"^(\d+),(\d+) (\d+)x(\d+)\n?$")
+        .expect("Should be valid pattern");
+    let caps = re.captures(line)?;
+    let x: i32 = caps[1].parse().unwrap();
+    let y: i32 = caps[2].parse().unwrap();
+    let width: i32 = caps[3].parse().unwrap();
+    let height: i32 = caps[4].parse().unwrap();
+    Some((x, y, width, height))
+}
+
+fn set_floating(stream: &mut UnixStream) -> Result<(), Box<dyn std::error::Error>> {
+    let mut buffer = String::new();
+    let stdin = std::io::stdin();
+    stdin.read_line(&mut buffer)?;
+
+    if let Some(geometry) = parse_geometry(&buffer) {
+        send_request(
+            stream,
+            &Request::SetFloating {
+                x: geometry.0,
+                y: geometry.1,
+                width: geometry.2,
+                height: geometry.3,
+            },
+        )?;
+        read_ok_response(stream)
     } else {
-        Err(result.into())
+        Err(format!("Invalid geometry: {buffer}").into())
     }
 }
 
@@ -207,6 +282,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.subcommand() {
         Some(("list-layouts", _)) => list_layouts(&mut socket, json)?,
+        Some(("list-outputs", _)) => list_outputs(&mut socket, json)?,
         Some(("list-workspaces", _)) => list_workspaces(&mut socket, json)?,
         Some(("new-workspace", new_ws_matches)) => {
             new_workspace(&mut socket, new_ws_matches.value_of_t_or_exit("tag"))?
@@ -217,8 +293,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rename_matches.value_of_t_or_exit("new-tag"),
         )?,
         Some(("select-layout", _)) => select_layout(&mut socket, args.value_of("menu").unwrap())?,
+        Some(("set-floating", _)) => set_floating(&mut socket)?,
         _ => {}
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parse_geometry;
+
+    #[test]
+    fn test_parse_geometry() {
+        let result = parse_geometry("0,0 100x200");
+        assert_eq!(result, Some((0, 0, 100, 200)));
+    }
 }

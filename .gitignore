@@ -4,5 +4,6 @@
 /.build/
 /.idea/
 /Sources/awc_config/libawc_config.*
+*.o
 
 target/

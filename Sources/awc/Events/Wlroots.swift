@@ -44,6 +44,18 @@ extension PListener {
         wl_signal_add(signal, &listener)
     }
 
+    internal static func handle<D>(
+        from: UnsafeMutableRawPointer,
+        data: KeyPath<Self, D>,
+        _ path: PartialKeyPath<Self>,
+        _ handlerCallback: (Self.Handler, D) -> ()
+    ) {
+        let listenersPtr = wlContainer(of: from, path)
+        if let handler = listenersPtr.pointee.handler {
+            handlerCallback(handler, listenersPtr.pointee[keyPath: data])
+        }
+    }
+
     internal static func handle<D, L: PListener>(
         from: UnsafeMutableRawPointer,
         data: UnsafeMutableRawPointer,
@@ -198,8 +210,13 @@ private struct OutputListener: Listener {
 
     weak var handler: WlEventHandler?
     private var outputDestroyed: wl_listener = wl_listener()
+    private var frame = wl_listener()
 
     fileprivate mutating func listen(to output: UnsafeMutablePointer<wlr_output>) {
+        Self.add(signal: &output.pointee.events.frame, listener: &self.frame) { listener, data in
+            Self.emitEvent(from: listener!, data: data!, \Self.frame, { Event.outputFrame(output: $0) })
+        }
+
         OutputListener.add(signal: &output.pointee.events.destroy, listener: &self.outputDestroyed) { listener, data in
             OutputListener.emitEvent(from: listener!, data: data!,
                     \OutputListener.outputDestroyed, { Event.outputDestroyed(output: $0) }
@@ -208,36 +225,42 @@ private struct OutputListener: Listener {
     }
 
     mutating func deregister() {
+        wl_list_remove(&self.frame.link)
         wl_list_remove(&self.outputDestroyed.link)
+    }
+}
+
+protocol InputDeviceHandler: AnyObject {
+    func destroyed(input: UnsafeMutablePointer<wlr_input_device>)
+}
+
+struct InputDeviceListener: PListener {
+    weak var handler: InputDeviceHandler?
+    private var destroyed: wl_listener = wl_listener()
+
+    internal mutating func listen(to input: UnsafeMutablePointer<wlr_input_device>) {
+        Self.add(signal: &input.pointee.events.destroy, listener: &self.destroyed) { (listener, data) in
+            Self.handle(from: listener!, data: data!, \Self.destroyed, { $0.destroyed(input: $1) })
+        }
+    }
+
+    mutating func deregister() {
+        wl_list_remove(&self.destroyed.link)
     }
 }
 
 // Signal listeners for a keyboard wlr_input_device.
 private struct KeyboardListener: Listener {
     weak var handler: WlEventHandler?
-    var keyboard: UnsafeMutablePointer<wlr_input_device>?
-    private var destroy: wl_listener = wl_listener()
+    private var keyboard: UnsafeMutablePointer<wlr_keyboard>!
     private var key: wl_listener = wl_listener()
     private var modifiers: wl_listener = wl_listener()
 
-    fileprivate mutating func listen(to keyboard: UnsafeMutablePointer<wlr_input_device>) {
+    fileprivate mutating func listen(to keyboard: UnsafeMutablePointer<wlr_keyboard>) {
         self.keyboard = keyboard
 
         KeyboardListener.add(
-            signal: &keyboard.pointee.keyboard.pointee.events.destroy,
-            listener: &self.destroy
-        ) { (listener, data) in
-            KeyboardListener.emitEventWithState(
-                from: listener!,
-                data: data!,
-                \KeyboardListener.destroy,
-                \KeyboardListener.keyboard,
-                { (device, data: UnsafeMutablePointer<wlr_keyboard>) in Event.keyboardDestroyed(device: device) }
-            )
-        }
-
-        KeyboardListener.add(
-            signal: &keyboard.pointee.keyboard.pointee.events.modifiers,
+            signal: &keyboard.pointee.events.modifiers,
             listener: &self.modifiers
         ) { (listener, data) in
             KeyboardListener.emitEventWithState(
@@ -250,7 +273,7 @@ private struct KeyboardListener: Listener {
         }
 
         KeyboardListener.add(
-            signal: &keyboard.pointee.keyboard.pointee.events.key,
+            signal: &keyboard.pointee.events.key,
             listener: &self.key
         ) { (listener, data) in
             KeyboardListener.emitEventWithState(
@@ -264,7 +287,6 @@ private struct KeyboardListener: Listener {
     }
 
     mutating func deregister() {
-        wl_list_remove(&self.destroy.link)
         wl_list_remove(&self.key.link)
         wl_list_remove(&self.modifiers.link)
     }
@@ -378,7 +400,7 @@ class WlEventHandler {
         self.addListener(cursor, CursorListener.newFor(emitter: cursor, handler: self))
     }
 
-    func addKeyboardListeners(device: UnsafeMutablePointer<wlr_input_device>) {
+    func addKeyboardListeners(device: UnsafeMutablePointer<wlr_keyboard>) {
         self.addListener(device, KeyboardListener.newFor(emitter: device, handler: self))
     }
 

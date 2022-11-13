@@ -67,7 +67,6 @@ public enum Action {
 public enum ButtonAction {
     case move
     case resize
-    case resizeByFrame
 }
 
 enum Key: Hashable {
@@ -388,8 +387,6 @@ private func toButtonAction(_ action: AwcButtonAction, _ window: AwcWindowSelect
         return (.move, selection)
     } else if action == Resize {
         return (.resize, selection)
-    } else if action == ResizeByFrame {
-        return (.resizeByFrame, selection)
     } else {
         fatalError("Unknown button action: \(action)")
     }

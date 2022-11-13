@@ -1,0 +1,6 @@
+module CWaylandEgl [system] {
+  header "shim.h"
+  export *
+  link "wayland-egl"
+  link "wayland-client"
+}

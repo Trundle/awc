@@ -86,21 +86,5 @@ extension Awc: DragIconHandler {
         }
 
         self.surfaces[icon.pointee.surface] = (x, y)
-
-        damage(icon: icon, x: x, y: y)
-    }
-
-    private func damage(icon: UnsafeMutablePointer<wlr_drag_icon>, x: Double, y: Double) {
-        if let wlrOutput = wlr_output_layout_output_at(self.outputLayout, x, y),
-           let output = self.viewSet.outputs().first(where: { $0.data.output == wlrOutput })
-        {
-            var box = wlr_box(
-                x: Int32(x),
-                y: Int32(y),
-                width: icon.pointee.surface.pointee.current.width,
-                height: icon.pointee.surface.pointee.current.height
-            )
-            wlr_output_damage_add_box(output.data.damage, &box)
-        }
     }
 }

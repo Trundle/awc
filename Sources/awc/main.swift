@@ -5,6 +5,7 @@
 import Glibc
 import Logging
 
+import DataStructures
 import Libawc
 import Wlroots
 
@@ -30,38 +31,26 @@ struct KeyModifiers: OptionSet, Hashable {
 public class OutputDetails {
     public let output: UnsafeMutablePointer<wlr_output>
     public let outputLayout: UnsafeMutablePointer<wlr_output_layout>?
-    public let damage: UnsafeMutablePointer<wlr_output_damage>
-    public let hud: OutputHud?
 
     init(wlrOutput: UnsafeMutablePointer<wlr_output>,
-         outputLayout: UnsafeMutablePointer<wlr_output_layout>?,
-         damage: UnsafeMutablePointer<wlr_output_damage>
+         outputLayout: UnsafeMutablePointer<wlr_output_layout>?
     ) {
         self.output = wlrOutput
         self.outputLayout = outputLayout
-        self.damage = damage
-        if outputLayout != nil {
-            self.hud = OutputHud()
-        } else {
-            self.hud = nil
-        }
     }
 
     var box: wlr_box {
         get {
             if let outputLayout = self.outputLayout {
-                return wlr_output_layout_get_box(outputLayout, self.output).pointee
+                var result = wlr_box()
+                wlr_output_layout_get_box(outputLayout, self.output, &result)
+                return result
             } else {
                 return wlr_box(x: 0, y: 0, width: 1280, height: 1024)
             }
         }
     }
 }
-
-
-public typealias RenderSurfaceHook<L: Layout> =
-    (Awc<L>, Output<L>, Surface, Set<ViewAttribute>, wlr_box) -> ()
-    where L.OutputData == OutputDetails, L.View == Surface
 
 public typealias ViewAtHook<L: Layout> =
     (Awc<L>, Double, Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
@@ -92,21 +81,22 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     let wlDisplay: OpaquePointer
     let backend: UnsafeMutablePointer<wlr_backend>
     let outputLayout: UnsafeMutablePointer<wlr_output_layout>
+    let sceneLayers: SceneLayers
     let renderer: UnsafeMutablePointer<wlr_renderer>
     let allocator: UnsafeMutablePointer<wlr_allocator>
     let noOpOutput: UnsafeMutablePointer<wlr_output>
-    let noOpOutputDamage: UnsafeMutablePointer<wlr_output_damage>
     let cursor: UnsafeMutablePointer<wlr_cursor>
     let cursorManager: UnsafeMutablePointer<wlr_xcursor_manager>
     let seat: UnsafeMutablePointer<wlr_seat>
     let idle: UnsafeMutablePointer<wlr_idle>
-    let renderSurfaceHook: RenderSurfaceHook<L>
     let viewAtHook: ViewAtHook<L>
     let layoutWrapper: (AnyLayout<L.View, L.OutputData>) -> L
     var defaultLayout: L
     private var hasKeyboard: Bool = false
     // The views that exist, should be managed, but are not mapped yet
     var unmapped: Set<Surface> = []
+    // The scene trees for surfaces
+    var sceneTrees: [Surface: UnsafeMutablePointer<wlr_scene_tree>] = [:]
     // The committed windoow geometries of surfaces
     var xdgGeometries: [Surface: wlr_box] = [:]
     var windowTypeAtoms: [xcb_atom_t: AtomWindowType] = [:]
@@ -127,8 +117,6 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
     internal var additionalRenderHook: ((UnsafeMutablePointer<wlr_renderer>, Output<L>) -> ())? = nil
     // An exclusive client that receives all input, if there is one (see wlroot's input inhibit protocol)
     internal var exclusiveClient: OpaquePointer? = nil
-    // Whether the "output HUD" is visible
-    internal var outputHudVisible: Bool = false
     internal var config: Config
     /// Whether the default cursor image is shown
     private var defaultCursorImageShown: Bool = false
@@ -139,6 +127,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         backend: UnsafeMutablePointer<wlr_backend>,
         noOpOutput: UnsafeMutablePointer<wlr_output>,
         outputLayout: UnsafeMutablePointer<wlr_output_layout>,
+        sceneLayers: SceneLayers,
         renderer: UnsafeMutablePointer<wlr_renderer>,
         allocator: UnsafeMutablePointer<wlr_allocator>,
         cursor: UnsafeMutablePointer<wlr_cursor>,
@@ -147,7 +136,6 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         idle: UnsafeMutablePointer<wlr_idle>,
         layout: L,
         layoutWrapper: @escaping (AnyLayout<L.View, L.OutputData>) -> L,
-        renderSurfaceHook: @escaping RenderSurfaceHook<L>,
         viewAtHook: @escaping ViewAtHook<L>,
         config: Config
     ) {
@@ -155,9 +143,8 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
             tag: config.workspaces.first ?? "1",
             layout: layout
         )
-        self.noOpOutputDamage = wlr_output_damage_create(noOpOutput)
         let output = Output(
-            data: OutputDetails(wlrOutput: noOpOutput, outputLayout: nil, damage: self.noOpOutputDamage),
+            data: OutputDetails(wlrOutput: noOpOutput, outputLayout: nil),
             workspace: workspace
         )
         var otherWorkspaces: [Workspace<L>] = []
@@ -170,6 +157,7 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.wlDisplay = wlDisplay
         self.backend = backend
         self.outputLayout = outputLayout
+        self.sceneLayers = sceneLayers
         self.renderer = renderer
         self.allocator = allocator
         self.noOpOutput = noOpOutput
@@ -178,7 +166,6 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
         self.seat = seat
         self.idle = idle
         self.wlEventHandler = wlEventHandler
-        self.renderSurfaceHook = renderSurfaceHook
         self.viewAtHook = viewAtHook
         self.config = config
         self.defaultLayout = layout
@@ -208,37 +195,21 @@ public class Awc<L: Layout> where L.View == Surface, L.OutputData == OutputDetai
 
     internal func viewAt(x: Double, y: Double) -> (Surface, UnsafeMutablePointer<wlr_surface>, Double, Double)?
     {
-        for output in self.viewSet.outputs() {
-            let outputLayoutBox = output.data.box
-            let outputX = x - Double(outputLayoutBox.x)
-            let outputY = y - Double(outputLayoutBox.y)
-            for (view, _, box) in output.arrangement.reversed() {
-                if box.contains(x: Int(outputX), y: Int(outputY)) {
-                    var surfaceX = outputX - Double(box.x)
-                    var surfaceY = outputY - Double(box.y)
-                    var sx: Double = 0
-                    var sy: Double = 0
-
-                    let surface: UnsafeMutablePointer<wlr_surface>?
-                    switch view {
-                    case .layer(let layerSurface):
-                        surface = wlr_layer_surface_v1_surface_at(layerSurface, surfaceX, surfaceY, &sx, &sy)
-                    case .xdg(let viewSurface):
-                        if let geometry = self.xdgGeometries[view] {
-                            surfaceX += Double(geometry.x)
-                            surfaceY += Double(geometry.y)
-                        }
-                        surface = wlr_xdg_surface_surface_at(viewSurface, surfaceX, surfaceY, &sx, &sy)
-                    case .xwayland:
-                        surface = wlr_surface_surface_at(view.wlrSurface, surfaceX, surfaceY, &sx, &sy)
-                    }
-                    if surface != nil {
-                        return (view, surface!, sx, sy)
-                    }
-                }
-            }
+        var sx: Double = 0
+        var sy: Double = 0
+        guard let node = wlr_scene_node_at(&self.sceneLayers.scene.pointee.tree.node, x, y, &sx, &sy),
+            node.pointee.type == WLR_SCENE_NODE_BUFFER
+        else {
+            return nil
         }
-        return nil
+
+        let sceneBuffer = wlr_scene_buffer_from_node(node)
+        guard let sceneSurface = wlr_scene_surface_from_buffer(sceneBuffer) else {
+            return nil
+        }
+
+        let surface = Surface.from(sceneTree: node.pointee.parent)
+        return (surface, sceneSurface.pointee.surface, sx, sy)
     }
 
     func shouldFloat(surface: Surface) -> Bool {
@@ -277,10 +248,11 @@ extension Awc {
         case .newInput(let device): handleNewInput(device)
         case .newOutput(let output): handleNewOutput(output)
         case .outputDestroyed(let output): handleOutputDestroyed(output)
+        case .outputFrame(let output): handleOutputFrame(output)
         }
     }
 
-    private func handleCursorAxis(_ event: UnsafeMutablePointer<wlr_event_pointer_axis>) {
+    private func handleCursorAxis(_ event: UnsafeMutablePointer<wlr_pointer_axis_event>) {
         wlr_seat_pointer_notify_axis(
             self.seat,
             event.pointee.time_msec,
@@ -291,7 +263,7 @@ extension Awc {
         )
     }
 
-    private func handleCursorButton(_ event: UnsafeMutablePointer<wlr_event_pointer_button>) {
+    private func handleCursorButton(_ event: UnsafeMutablePointer<wlr_pointer_button_event>) {
         wlr_idle_notify_activity(self.idle, self.seat)
 
         self.buttonsPressed += event.pointee.state == WLR_BUTTON_PRESSED ? 1 : -1
@@ -360,13 +332,13 @@ extension Awc {
     }
 
     /// This event is forwarded by the cursor when a pointer emits a relative pointer motion event.
-    private func handleCursorMotion(_ event: UnsafeMutablePointer<wlr_event_pointer_motion>) {
+    private func handleCursorMotion(_ event: UnsafeMutablePointer<wlr_pointer_motion_event>) {
         // The cursor doesn't move unless we tell it to. The cursor automatically
         // handles constraining the motion to the output layout, as well as any
         // special configuration applied for the specific input device which
         // generated the event. You can pass NULL for the device if you want to move
         // the cursor around without any input.
-        wlr_cursor_move(self.cursor, event.pointee.device, event.pointee.delta_x, event.pointee.delta_y)
+        wlr_cursor_move(self.cursor, &event.pointee.pointer.pointee.base, event.pointee.delta_x, event.pointee.delta_y)
         self.handleCursorMotion(time: event.pointee.time_msec)
     }
 
@@ -378,8 +350,8 @@ extension Awc {
      * so we have to warp the mouse there. There is also some hardware which
      * emits these events.
      */
-    private func handleCursorMotionAbsolute(_ event: UnsafeMutablePointer<wlr_event_pointer_motion_absolute>) {
-        wlr_cursor_warp_absolute(self.cursor, event.pointee.device, event.pointee.x, event.pointee.y)
+    private func handleCursorMotionAbsolute(_ event: UnsafeMutablePointer<wlr_pointer_motion_absolute_event>) {
+        wlr_cursor_warp_absolute(self.cursor, &event.pointee.pointer.pointee.base, event.pointee.x, event.pointee.y)
         self.handleCursorMotion(time: event.pointee.time_msec)
     }
 
@@ -429,16 +401,17 @@ extension Awc {
                     return xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS)
                 }
             }
-            wlr_keyboard_set_keymap(device.pointee.keyboard, keymap)
+            let keyboardDevice = wlr_keyboard_from_input_device(device)!
+            wlr_keyboard_set_keymap(keyboardDevice, keymap)
 
-            wlr_keyboard_set_repeat_info(device.pointee.keyboard, 25, 600)
+            wlr_keyboard_set_repeat_info(keyboardDevice, 25, 600)
 
-            self.wlEventHandler.addKeyboardListeners(device: device)
+            self.wlEventHandler.addKeyboardListeners(device: keyboardDevice)
 
             xkb_keymap_unref(keymap)
             xkb_context_unref(context)
 
-            wlr_seat_set_keyboard(self.seat, device)
+            wlr_seat_set_keyboard(self.seat, keyboardDevice)
             self.hasKeyboard = true
         } else if device.pointee.type == WLR_INPUT_DEVICE_POINTER {
             // We don't do anything special with pointers. All of our pointer handling
@@ -446,8 +419,9 @@ extension Awc {
             // opportunity to do libinput configuration on the device to set
             // acceleration, etc.
             wlr_cursor_attach_input_device(self.cursor, device)
+            let pointerDevice = wlr_pointer_from_input_device(device)!
 
-            if let deviceOutputName = device.pointee.output_name,
+            if let deviceOutputName = pointerDevice.pointee.output_name,
                 let wantedOutput = self.viewSet.findOutputBy(name: String(cString: deviceOutputName))
             {
                 wlr_cursor_map_input_to_output(self.cursor, device, wantedOutput.data.output)
@@ -505,17 +479,10 @@ extension Awc {
             wlr_output_layout_add_auto(self.outputLayout, wlrOutput)
         }
 
-        guard let damage = wlr_output_damage_create(wlrOutput) else {
-            logger.error("Could not create output damage, output will be ignored")
-            return
-        }
-
-        self.addListener(damage, OutputDamageListener.newFor(emitter: damage, handler: self))
-
         self.modifyAndUpdate {
             if $0.current.data.output == self.noOpOutput {
                 let newOutput = Output(
-                    data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout, damage: damage),
+                    data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout),
                     workspace: $0.current.workspace
                 )
                 return $0.replace(current: newOutput)
@@ -523,7 +490,7 @@ extension Awc {
                 var hidden = Array(self.viewSet.hidden)
                 if let workspace = hidden.popLast() {
                     let newOutput = Output(
-                        data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout, damage: damage),
+                        data: OutputDetails(wlrOutput: wlrOutput, outputLayout: self.outputLayout),
                         workspace: workspace
                     )
                     return $0.replace(
@@ -548,10 +515,6 @@ extension Awc {
 
         self.wlEventHandler.removeOutputListeners(output: wlrOutput)
 
-        if let output = self.viewSet.outputs().first(where: { $0.data.output == wlrOutput }) {
-            self.removeListener(output.data.damage, OutputDamageListener.self)
-        }
-
         self.modifyAndUpdate {
             if $0.current.data.output == wlrOutput {
                 if let newCurrent = $0.visible.first {
@@ -565,8 +528,7 @@ extension Awc {
                     let newCurrent = Output(
                         data: OutputDetails(
                             wlrOutput: self.noOpOutput,
-                            outputLayout: nil,
-                            damage: self.noOpOutputDamage
+                            outputLayout: nil
                         ),
                         workspace: $0.current.workspace
                     )
@@ -585,6 +547,15 @@ extension Awc {
         }
     }
 
+    private func handleOutputFrame(_ wlrOutput: UnsafeMutablePointer<wlr_output>) {
+        let sceneOutput = wlr_scene_get_scene_output(self.sceneLayers.scene, wlrOutput)
+        wlr_scene_output_commit(sceneOutput)
+
+        var now = timespec()
+        clock_gettime(CLOCK_MONOTONIC, &now)
+        wlr_scene_output_send_frame_done(sceneOutput, &now)
+    }
+
     internal func handleUnmap(surface: Surface) {
         self.modifyAndUpdate {
             self.unmapped.insert(surface)
@@ -592,19 +563,9 @@ extension Awc {
         }
     }
 
-    private func sendFrameDone(for output: Output<L>, when: inout timespec) {
-        for (parent, _, _) in output.arrangement {
-            for (surface, _, _) in parent.surfaces() {
-                // This lets the client know that we've displayed that frame and it can prepare another
-                // one now if it likes.
-                wlr_surface_send_frame_done(surface, &when)
-            }
-        }
-    }
-
     private func handleKey(
-        _ device: UnsafeMutablePointer<wlr_input_device>,
-        _ event: UnsafeMutablePointer<wlr_event_keyboard_key>
+        _ device: UnsafeMutablePointer<wlr_keyboard>,
+        _ event: UnsafeMutablePointer<wlr_keyboard_key_event>
     ) {
         var handled = false
 
@@ -618,9 +579,9 @@ extension Awc {
             defer {
                 syms.deallocate()
             }
-            let nsyms = xkb_state_key_get_syms(device.pointee.keyboard.pointee.xkb_state, keycode, syms)
+            let nsyms = xkb_state_key_get_syms(device.pointee.xkb_state, keycode, syms)
 
-            let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device.pointee.keyboard))
+            let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device))
             if event.pointee.state == WL_KEYBOARD_KEY_STATE_PRESSED {
                 for i in 0..<Int(nsyms) {
                     if let action = self.config.findKeyBinding(
@@ -648,26 +609,14 @@ extension Awc {
         self.wlEventHandler.removeKeyboardListeners(device: device)
     }
 
-    private func handleModifiers(_ device: UnsafeMutablePointer<wlr_input_device>) {
-        let modifiers = KeyModifiers(rawValue: wlr_keyboard_get_modifiers(device.pointee.keyboard))
-        let modPressed = modifiers.contains(self.config.modifier)
-        if !modPressed && self.outputHudVisible {
-            wlr_output_damage_add_whole(self.viewSet.current.data.damage)
-            self.additionalRenderHook = nil
-            self.outputHudVisible = false
-        } else if modPressed && !self.outputHudVisible && self.exclusiveClient == nil {
-            self.outputHudVisible = true
-            self.additionalRenderHook = self.renderOutputHud
-            self.updateLayout()
-        }
-
+    private func handleModifiers(_ device: UnsafeMutablePointer<wlr_keyboard>) {
         // A seat can only have one keyboard, but this is a limitation of the
         // Wayland protocol - not wlroots. We assign all connected keyboards to the
         // same seat. You can swap out the underlying wlr_keyboard like this and
         // wlr_seat handles this transparently.
         wlr_seat_set_keyboard(self.seat, device)
         // Send modifiers to the client.
-        wlr_seat_keyboard_notify_modifiers(self.seat, &device.pointee.keyboard.pointee.modifiers)
+        wlr_seat_keyboard_notify_modifiers(self.seat, &device.pointee.modifiers)
     }
 }
 
@@ -714,136 +663,6 @@ extension Awc: SeatEventHandler {
     }
 }
 
-// MARK: Output damage tracking
-
-protocol OutputDamage: AnyObject {
-    func frame(outputDamage: UnsafeMutablePointer<wlr_output_damage>)
-}
-
-struct OutputDamageListener: PListener {
-    weak var handler: OutputDamage?
-    private var frame: wl_listener = wl_listener()
-
-    internal mutating func listen(to damage: UnsafeMutablePointer<wlr_output_damage>) {
-        Self.add(signal: &damage.pointee.events.frame, listener: &self.frame) { (listener, data) in
-            Self.handle(from: listener!, data: data!, \Self.frame, { $0.frame(outputDamage: $1) })
-        }
-    }
-
-    mutating func deregister() {
-        wl_list_remove(&self.frame.link)
-    }
-}
-
-extension Awc: OutputDamage {
-    internal func frame(outputDamage: UnsafeMutablePointer<wlr_output_damage>) {
-        let wlrOutput = outputDamage.pointee.output!
-        guard let output = self.viewSet.outputs().first(where: { $0.data.output == wlrOutput }) else {
-            return
-        }
-
-        var bufferDamage = pixman_region32_t()
-        pixman_region32_init(&bufferDamage)
-        defer {
-            pixman_region32_fini(&bufferDamage)
-        }
-
-        var now = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &now)
-        defer {
-            sendFrameDone(for: output, when: &now)
-        }
-
-        var needsFrame = false
-        guard wlr_output_damage_attach_render(output.data.damage, &needsFrame, &bufferDamage) else {
-            return
-        }
-
-        guard needsFrame else {
-            wlr_output_rollback(wlrOutput)
-            return
-        }
-
-        // Begin the rendering (calls glViewport and some other GL sanity checks)
-        wlr_renderer_begin(self.renderer, UInt32(wlrOutput.pointee.width), UInt32(wlrOutput.pointee.height))
-
-        var color = float_rgba(r: 0.3, g: 0.3, b: 0.3, a: 1.0)
-        color.withPtr { wlr_renderer_clear(self.renderer, $0) }
-
-        for (parent, attributes, box) in output.arrangement {
-            self.renderSurfaceHook(self, output, parent, attributes, box)
-        }
-
-        // Render additional surfaces such as drag and drop icons
-        self.renderAdditional(output: output)
-
-        // Hardware cursors are rendered by the GPU on a separate plane, and can be
-        // moved around without re-rendering what's beneath them - which is more
-        // efficient. However, not all hardware supports hardware cursors. For this
-        // reason, wlroots provides a software fallback, which we ask it to render
-        // here. wlr_cursor handles configuring hardware vs software cursors for you,
-        // and this function is a no-op when hardware cursors are in use.
-        wlr_output_render_software_cursors(wlrOutput, &bufferDamage)
-
-        self.rendererEnd(wlrOutput: wlrOutput, damage: output.data.damage)
-    }
-
-    private func renderAdditional(output: Output<L>) {
-        let outputBox = output.data.box
-        for (surface, (x, y)) in self.surfaces.filter({ outputBox.contains(x: Int($0.value.0), y: Int($0.value.1)) }) {
-            let px = Int32(x) - outputBox.x
-            let py = Int32(y) - outputBox.y
-            for (childSurface, sx, sy) in surface.surfaces() {
-                renderSurface(
-                    renderer: self.renderer,
-                    output: output.data.output,
-                    px: px,
-                    py: py,
-                    surface: childSurface,
-                    sx: sx,
-                    sy: sy
-                )
-            }
-        }
-
-        self.additionalRenderHook?(self.renderer, output)
-    }
-
-    /// Conclude rendering and swap the buffers, showing the final frame on-screen.
-    private func rendererEnd(
-        wlrOutput: UnsafeMutablePointer<wlr_output>,
-        damage: UnsafeMutablePointer<wlr_output_damage>
-    ) {
-        wlr_renderer_end(self.renderer)
-
-        var width: Int32 = 0
-        var height: Int32 = 0
-        wlr_output_transformed_resolution(wlrOutput, &width, &height)
-
-        var frameDamage = pixman_region32_t()
-        pixman_region32_init(&frameDamage)
-        defer {
-            pixman_region32_fini(&frameDamage)
-        }
-
-        let transform = wlr_output_transform_invert(wlrOutput.pointee.transform)
-        wlr_region_transform(&frameDamage, &damage.pointee.current, transform, width, height)
-
-        wlr_output_set_damage(wlrOutput, &frameDamage)
-
-        wlr_output_commit(wlrOutput)
-    }
-}
-
-// MARK: Output HUD
-
-extension Awc {
-    func renderOutputHud(renderer: UnsafeMutablePointer<wlr_renderer>, output: Output<L>) {
-        if self.outputHudVisible && output.workspace.tag == self.viewSet.current.workspace.tag {
-            self.viewSet.current.data.hud?.render(on: output, with: self.renderer)
-        }
-    }
-}
 
 // MARK: main
 
@@ -906,7 +725,8 @@ func main() {
     }
 
     // This creates some hands-off wlroots interfaces. The compositor is
-    // necessary for clients to allocate surfaces and the data device manager
+    // necessary for clients to allocate surfaces, the subcompositor allows to
+	// assign the role of subsurfaces to surfaces and the data device manager
     // handles the clipboard. Each of these wlroots interfaces has room for you
     // to dig your fingers in and play with their behavior if you want. Note that
     // the clients cannot set the selection directly without compositor approval,
@@ -915,6 +735,7 @@ func main() {
         logger.critical("Could not create compositor :(")
         return
     }
+    wlr_subcompositor_create(wlDisplay)
     wlr_data_device_manager_create(wlDisplay)
 
     guard wlr_primary_selection_v1_device_manager_create(wlDisplay) != nil else {
@@ -928,6 +749,18 @@ func main() {
 
     let wlEventHandler = WlEventHandler()
     wlEventHandler.addBackendListeners(backend: backend)
+
+    // Create a scene graph. It handles all damage tracking and rendering.
+    guard let scene = wlr_scene_create() else {
+        logger.critical("Could not create scene :(")
+        return
+    }
+    wlr_scene_attach_output_layout(scene, outputLayout)
+
+    guard let sceneLayers = SceneLayers(scene: scene) else  {
+        logger.critical("Could not create scene layers :(")
+        return
+    }
 
     // Configures a seat, which is a single "seat" at which a user sits and
     // operates the computer. This conceptually includes up to one keyboard,
@@ -996,6 +829,7 @@ func main() {
         backend: backend,
         noOpOutput: noopOutput,
         outputLayout: outputLayout!,
+        sceneLayers: sceneLayers,
         renderer: renderer,
         allocator: allocator,
         cursor: cursor,
@@ -1004,13 +838,7 @@ func main() {
         idle: idle,
         layout: layoutWrapper(config.layout),
         layoutWrapper: layoutWrapper,
-        renderSurfaceHook: smartBorders(
-            borderWidth: config.borderWidth,
-            activeBorderColor: config.colors.borders.active.toFloatRgba(),
-            inactiveBorderColor: config.colors.borders.inactive.toFloatRgba(),
-            renderSurface
-        ),
-        viewAtHook: { layerViewAt(delegate: defaultViewAtHook, awc: $0, x: $1, y: $2) },
+        viewAtHook: defaultViewAtHook,
         config: config
     )
 

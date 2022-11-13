@@ -1,0 +1,4 @@
+module LayerShellClient [system] {
+  header "shim.h"
+  link "LayerShellImpl"
+}

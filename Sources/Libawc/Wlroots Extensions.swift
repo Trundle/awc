@@ -2,6 +2,9 @@
 /// Various extensions to make Wlroots a bit more pleasant to use in Swift.
 ///
 
+import Glibc // round
+
+import DataStructures
 import Wlroots
 
 
@@ -195,5 +198,11 @@ public extension UnsafeMutablePointer where Pointee == wlr_output {
         get {
             return String(cString: self.pointee.name)
         }
+    }
+}
+
+public extension Box {
+    func toWlrBox() -> wlr_box {
+        return wlr_box(x: self.x, y: self.y, width: self.width, height: self.height)
     }
 }

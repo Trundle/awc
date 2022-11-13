@@ -1,0 +1,4 @@
+module CEpoll [system] {
+  header "shim.h"
+  export *
+}

@@ -13,8 +13,8 @@ fileprivate struct AnsiCodes {
     private init() {}
 }
 
-class AnsiLogHandler: LogHandler {
-    static var logLevelChangedListener: ((Logger.Level) -> ())? = nil
+public class AnsiLogHandler: LogHandler {
+    public static var logLevelChangedListener: ((Logger.Level) -> ())? = nil
 
     private let file = stderr
     private let colorize: Bool

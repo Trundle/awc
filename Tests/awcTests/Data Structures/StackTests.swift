@@ -1,7 +1,7 @@
 import SwiftCheck
 import XCTest
 
-import Libawc
+import DataStructures 
 
 
 fileprivate extension Stack where T == Int {

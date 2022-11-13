@@ -1,6 +1,6 @@
 import XCTest
 
-import Libawc
+import DataStructures
 
 
 class LRUCacheTests: XCTestCase {

@@ -1,0 +1,5 @@
+module EGlext [system] {
+  header "shim.h"
+  export *
+  link "EGL"
+}
