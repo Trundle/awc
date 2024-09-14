@@ -2,6 +2,9 @@
 awc
 ===
 
+.. note::
+   Awc is unmaintained. Give `niri`_ a try instead.
+
 A Wayland compositor using `wlroots`_ written in Swift.
 
 It is heavily inspired, conceptually as well as code-wise, from `XMonad`_.
@@ -180,6 +183,7 @@ are listed a few (without any claim to completeness):
 
 * `hikari <https://hikari.acmelabs.space/>`_
 * `river <https://github.com/ifreund/river>`_
+* `niri`_
 * Sway_
 * `vivarium <https://github.com/inclement/vivarium>`_
 * `Wayfire <https://wayfire.org/>`_
@@ -204,6 +208,7 @@ and released under `a BSD license
 <https://github.com/xmonad/xmonad/blob/master/LICENSE>`_.
 
 
+.. _niri: https://github.com/YaLTeR/niri/
 .. _Sway: https://swaywm.org/
 .. _wlroots: https://gitlab.freedesktop.org/wlroots/wlroots/
 .. _XMonad: https://xmonad.org/
